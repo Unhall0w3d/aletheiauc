@@ -62,19 +62,26 @@ class PreflightResult:
         return [status.name for status in self.interfaces if status.available]
 
 
-def default_cucm_probes(host: str) -> list[InterfaceProbe]:
+def default_cucm_probes(
+    host: str,
+    *,
+    axl_port: int = 8443,
+    risport_port: int = 8443,
+    control_center_port: int = 8443,
+    perfmon_port: int = 8443,
+) -> list[InterfaceProbe]:
     """Return the default API probes for a CUCM node."""
 
     return [
-        InterfaceProbe("axl", host, 8443, "/axl/"),
-        InterfaceProbe("risport70", host, 8443, "/realtimeservice2/services/RISService70?wsdl"),
+        InterfaceProbe("axl", host, axl_port, "/axl/"),
+        InterfaceProbe("risport70", host, risport_port, "/realtimeservice2/services/RISService70?wsdl"),
         InterfaceProbe(
             "control_center",
             host,
-            8443,
+            control_center_port,
             "/controlcenterservice2/services/ControlCenterServices?wsdl",
         ),
-        InterfaceProbe("perfmon", host, 8443, "/perfmonservice2/services/PerfmonService?wsdl"),
+        InterfaceProbe("perfmon", host, perfmon_port, "/perfmonservice2/services/PerfmonService?wsdl"),
     ]
 
 
@@ -83,6 +90,10 @@ def probe_interfaces(
     *,
     timeout_seconds: float = 3.0,
     socket_probe: SocketProbe | None = None,
+    axl_port: int = 8443,
+    risport_port: int = 8443,
+    control_center_port: int = 8443,
+    perfmon_port: int = 8443,
 ) -> list[InterfaceStatus]:
     """Probe known CUCM interfaces before running interface-specific collectors."""
 
@@ -99,7 +110,13 @@ def probe_interfaces(
 
     probe = socket_probe or _tcp_probe
     statuses: list[InterfaceStatus] = []
-    for interface in default_cucm_probes(host):
+    for interface in default_cucm_probes(
+        host,
+        axl_port=axl_port,
+        risport_port=risport_port,
+        control_center_port=control_center_port,
+        perfmon_port=perfmon_port,
+    ):
         endpoint = f"https://{interface.host}:{interface.port}{interface.path}"
         try:
             available = probe(interface.host, interface.port, timeout_seconds)
@@ -133,6 +150,11 @@ def run_publisher_preflight(
     ping_probe: PingProbe | None = None,
     socket_probe: SocketProbe | None = None,
     http_probe: HttpProbe | None = None,
+    base_https_ports: tuple[int, ...] = (443, 8443),
+    axl_port: int = 8443,
+    risport_port: int = 8443,
+    control_center_port: int = 8443,
+    perfmon_port: int = 8443,
 ) -> PreflightResult:
     """Run Publisher ping, base URL, and API interface reachability checks."""
 
@@ -171,8 +193,8 @@ def run_publisher_preflight(
             ConnectivityStatus(name="ping", available=False, target=host, reason=str(exc))
         )
 
-    for scheme, port in (("http", 80), ("https", 8443)):
-        url = f"{scheme}://{host}:{port}/"
+    for port in base_https_ports:
+        url = f"https://{host}:{port}/"
         try:
             available, reason = http(url, timeout_seconds)
         except OSError as exc:
@@ -180,7 +202,7 @@ def run_publisher_preflight(
             reason = str(exc)
         connectivity.append(
             ConnectivityStatus(
-                name=f"{scheme}_base",
+                name=f"https_{port}",
                 available=available,
                 target=url,
                 reason=reason,
@@ -190,7 +212,15 @@ def run_publisher_preflight(
     return PreflightResult(
         publisher=host,
         connectivity=connectivity,
-        interfaces=probe_interfaces(context, timeout_seconds=timeout_seconds, socket_probe=socket_probe),
+        interfaces=probe_interfaces(
+            context,
+            timeout_seconds=timeout_seconds,
+            socket_probe=socket_probe,
+            axl_port=axl_port,
+            risport_port=risport_port,
+            control_center_port=control_center_port,
+            perfmon_port=perfmon_port,
+        ),
     )
 
 

@@ -60,6 +60,7 @@ package from `src/` directly, so an editable package install is optional.
 
 When the assessment completes, Helios prints an Executive Summary in the
 terminal and writes a styled HTML report under `reports/` by default.
+It also writes local parser/debug artifacts under `assessment_runs/` by default.
 
 On startup, the CLI checks for saved connection profiles. If any exist, it asks
 whether to load an existing profile. Answering `Y` lets you choose the saved
@@ -78,8 +79,8 @@ collector context.
 After a profile is loaded, Helios runs a Publisher preflight:
 
 - ping reachability
-- HTTP base URL check
-- HTTPS base URL check
+- HTTPS base URL check on port 443
+- HTTPS base URL check on port 8443
 - AXL endpoint reachability
 - RISPort70 endpoint reachability
 - Control Center Services endpoint reachability
@@ -107,6 +108,18 @@ To choose an explicit HTML report path:
 ./helios.py --html-report reports/lab-assessment.html
 ```
 
+To choose an explicit artifact directory:
+
+```bash
+./helios.py --artifact-dir assessment_runs
+```
+
+To disable local artifact writing:
+
+```bash
+./helios.py --no-artifacts
+```
+
 To print JSON instead of the terminal Executive Summary:
 
 ```bash
@@ -123,6 +136,12 @@ no longer required:
 
 Future collectors will use preflight status to avoid running collectors for
 interfaces that are unavailable.
+
+If a lab uses alternate API ports, override them at startup:
+
+```bash
+./helios.py --axl-port 9443 --risport-port 9444 --control-center-port 9445 --perfmon-port 9446
+```
 
 If you prefer installing Helios as a Python package during development, the
 `ccha` console command is also available after an editable install:
@@ -165,6 +184,33 @@ Use `--no-save-credentials` to avoid storing passwords for the current run:
 ```bash
 ./helios.py --no-save-credentials
 ```
+
+## Local Artifacts
+
+Helios writes local per-run artifacts for parser development, debugging, and
+future evidence traceability. These files are intentionally ignored by git.
+
+Default layout:
+
+```text
+assessment_runs/
+  <profile>/
+    <timestamp>/
+      manifest.json
+      normalized/
+      nodes/
+        <node>/
+          preflight/
+          normalized/
+          api/
+          cli/
+```
+
+Current artifacts include Publisher preflight data and normalized sample
+collector output. Future API and SSH collectors should write raw request,
+response, command, and stdout/stderr artifacts here before parsing.
+
+Reusable credentials should not be written to artifact files.
 
 ## Cluster Discovery Direction
 

@@ -8,6 +8,11 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
+from cisco_collab_health.artifacts import (
+    ArtifactStore,
+    write_assessment_artifacts,
+    write_preflight_artifacts,
+)
 from cisco_collab_health.collectors.base import CollectionContext
 from cisco_collab_health.collectors.sample import SampleCollector
 from cisco_collab_health.config import ensure_runtime_profile, select_or_create_runtime_profile
@@ -43,6 +48,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not write the styled HTML report.",
     )
     parser.add_argument(
+        "--artifact-dir",
+        default="assessment_runs",
+        help="Directory for local per-run artifacts. Defaults to assessment_runs/.",
+    )
+    parser.add_argument(
+        "--no-artifacts",
+        action="store_true",
+        help="Do not write local parser/debug artifacts.",
+    )
+    parser.add_argument(
         "--profile",
         help="Local connection profile name. If omitted, choose from saved profiles or create one.",
     )
@@ -66,6 +81,30 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Deprecated alias; Publisher preflight runs automatically after profile load.",
     )
+    parser.add_argument(
+        "--axl-port",
+        type=int,
+        default=8443,
+        help="AXL HTTPS port.",
+    )
+    parser.add_argument(
+        "--risport-port",
+        type=int,
+        default=8443,
+        help="RISPort70 HTTPS port.",
+    )
+    parser.add_argument(
+        "--control-center-port",
+        type=int,
+        default=8443,
+        help="Control Center Services HTTPS port.",
+    )
+    parser.add_argument(
+        "--perfmon-port",
+        type=int,
+        default=8443,
+        help="PerfMon HTTPS port.",
+    )
     return parser
 
 
@@ -86,6 +125,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _run(args: argparse.Namespace, status: StatusPrinter) -> int:
     context = CollectionContext()
+    run_started = datetime.now()
+    artifact_store: ArtifactStore | None = None
+    profile_name = "sample"
+
     if not args.skip_profile:
         status.stage("Loading connection profile")
         if args.profile:
@@ -110,12 +153,36 @@ def _run(args: argparse.Namespace, status: StatusPrinter) -> int:
             os_username=runtime_profile.stored.os_username,
             os_password=runtime_profile.os_password,
         )
+        profile_name = runtime_profile.stored.name
+        artifact_store = _create_artifact_store(args, status, profile_name, run_started)
+        _write_manifest(
+            artifact_store,
+            profile_name=profile_name,
+            publisher_ip=runtime_profile.stored.publisher_ip,
+            skipped_profile=False,
+        )
         status.ok(f"Profile loaded: {runtime_profile.stored.name}")
         status.stage(f"Running Publisher preflight: {runtime_profile.stored.publisher_ip}")
-        preflight = run_publisher_preflight(context)
+        preflight = run_publisher_preflight(
+            context,
+            axl_port=args.axl_port,
+            risport_port=args.risport_port,
+            control_center_port=args.control_center_port,
+            perfmon_port=args.perfmon_port,
+        )
         _print_preflight_status(preflight, status)
+        if artifact_store:
+            write_preflight_artifacts(artifact_store, runtime_profile.stored.publisher_ip, preflight)
+            status.ok(f"Preflight artifacts written: {artifact_store.root}")
     else:
         status.warn("Skipping profile and Publisher preflight")
+        artifact_store = _create_artifact_store(args, status, profile_name, run_started)
+        _write_manifest(
+            artifact_store,
+            profile_name=profile_name,
+            publisher_ip=None,
+            skipped_profile=True,
+        )
 
     status.stage("Running collectors")
     engine = AssessmentEngine(
@@ -124,6 +191,9 @@ def _run(args: argparse.Namespace, status: StatusPrinter) -> int:
     )
     report = engine.run(context)
     status.ok("Collectors completed")
+    if artifact_store:
+        write_assessment_artifacts(artifact_store, report)
+        status.ok(f"Assessment artifacts written: {artifact_store.root}")
 
     html_report_path = None
     if not args.no_html_report:
@@ -153,6 +223,42 @@ def _write_html_report(report: AssessmentReport, requested_path: str | None) -> 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(HtmlReportBuilder().build(report), encoding="utf-8")
     return path
+
+
+def _create_artifact_store(
+    args: argparse.Namespace,
+    status: StatusPrinter,
+    profile_name: str,
+    run_started: datetime,
+) -> ArtifactStore | None:
+    if args.no_artifacts:
+        status.warn("Skipping local artifact storage")
+        return None
+
+    status.stage("Preparing local artifact storage")
+    store = ArtifactStore.create(args.artifact_dir, profile_name, run_started)
+    status.ok(f"Artifact directory: {store.root}")
+    return store
+
+
+def _write_manifest(
+    store: ArtifactStore | None,
+    *,
+    profile_name: str,
+    publisher_ip: str | None,
+    skipped_profile: bool,
+) -> None:
+    if not store:
+        return
+
+    store.write_manifest(
+        {
+            "tool": "helios",
+            "profile_name": profile_name,
+            "publisher_ip": publisher_ip,
+            "skipped_profile": skipped_profile,
+        }
+    )
 
 
 def _print_preflight_status(preflight: PreflightResult, status: StatusPrinter) -> None:
