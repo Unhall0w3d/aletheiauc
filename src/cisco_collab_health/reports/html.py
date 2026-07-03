@@ -16,6 +16,7 @@ class HtmlReportBuilder:
         severity_counts = Counter(finding.severity for finding in report.findings)
         cluster_section = self._cluster_section(report)
         node_rows = self._node_rows(report)
+        collector_warnings_section = self._collector_warnings_section(report)
         finding_sections = "\n".join(self._finding_section(finding) for finding in report.findings)
 
         return f"""<!doctype html>
@@ -155,6 +156,7 @@ class HtmlReportBuilder:
         </tbody>
       </table>
     </section>
+    {collector_warnings_section}
     <section>
       <h2>Findings</h2>
       {finding_sections}
@@ -202,6 +204,31 @@ class HtmlReportBuilder:
             )
             for node in report.facts.nodes
         )
+
+    def _collector_warnings_section(self, report: AssessmentReport) -> str:
+        rows = []
+        for result in report.collector_results:
+            for warning in result.warnings:
+                rows.append(
+                    "<tr>"
+                    f"<td>{escape(result.collector_name)}</td>"
+                    f"<td>{escape(warning)}</td>"
+                    "</tr>"
+                )
+        if not rows:
+            return ""
+
+        return f"""
+    <section>
+      <h2>Collector Warnings</h2>
+      <table>
+        <thead><tr><th>Collector</th><th>Warning</th></tr></thead>
+        <tbody>
+          {"".join(rows)}
+        </tbody>
+      </table>
+    </section>
+"""
 
     def _finding_section(self, finding: HealthFinding) -> str:
         severity = escape(finding.severity.value)

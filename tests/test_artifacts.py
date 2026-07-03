@@ -80,11 +80,22 @@ class ArtifactStoreTests(unittest.TestCase):
             summary = log_store.root / "executive_summary.txt"
             warnings = log_store.root / "collector_warnings.json"
             artifact_index = log_store.root / "artifact_index.txt"
+            artifact_copy = (
+                log_store.root
+                / "artifacts"
+                / "nodes"
+                / "192.0.2.10"
+                / "api"
+                / "axl"
+                / "getCCMVersion"
+                / "response.txt"
+            )
             report_copy = log_store.root / "report.html"
 
             self.assertTrue(summary.exists())
             self.assertTrue(warnings.exists())
             self.assertIn("response.txt", artifact_index.read_text(encoding="utf-8"))
+            self.assertEqual(artifact_copy.read_text(encoding="utf-8"), "<xml />")
             self.assertTrue(report_copy.exists())
 
 

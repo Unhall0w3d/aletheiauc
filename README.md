@@ -253,12 +253,19 @@ logs/
     assessment_report.json
     collector_warnings.json
     artifact_index.txt
+    artifact_source.txt
+    artifacts/
+      manifest.json
+      normalized/
+      nodes/
 ```
 
 Use this folder when you want to provide a compact troubleshooting package for
 analysis. It contains status messages, collector warnings, a copy of the HTML
-report, the normalized assessment JSON, and an index of the raw artifact files
-stored in `assessment_runs/`.
+report, the normalized assessment JSON, and a copy of the raw and normalized
+artifact files from the matching `assessment_runs/` entry. Raw API artifacts are
+stored below `artifacts/nodes/<node>/api/<interface>/<operation>/` as
+`request.txt` and `response.txt`; request artifacts omit reusable credentials.
 
 ## Cluster Discovery Direction
 

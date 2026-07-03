@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import unittest
 
+from cisco_collab_health.collectors.base import CollectionResult
 from cisco_collab_health.collectors.sample import SampleCollector
 from cisco_collab_health.engine import AssessmentEngine
+from cisco_collab_health.models.assessment import AssessmentReport
+from cisco_collab_health.models.facts import AssessmentFacts
 from cisco_collab_health.reports.html import HtmlReportBuilder
 from cisco_collab_health.reports.json import JsonReportBuilder
 from cisco_collab_health.reports.summary import ExecutiveSummaryBuilder
@@ -41,6 +44,24 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("<!doctype html>", payload)
         self.assertIn("Cisco Collaboration Health Assessment", payload)
         self.assertIn("Cluster identity collected", payload)
+
+    def test_html_report_contains_collector_warnings(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(),
+            collector_results=[
+                CollectionResult(
+                    collector_name="axl",
+                    facts=AssessmentFacts(),
+                    warnings=["AXL getCCMVersion failed: HTTP 599"],
+                )
+            ],
+            findings=[],
+        )
+
+        payload = HtmlReportBuilder().build(report)
+
+        self.assertIn("Collector Warnings", payload)
+        self.assertIn("AXL getCCMVersion failed: HTTP 599", payload)
 
 
 if __name__ == "__main__":

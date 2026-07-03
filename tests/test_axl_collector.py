@@ -105,6 +105,9 @@ class AxlCollectorTests(unittest.TestCase):
             response = store.root / "nodes" / "10.51.200.8" / "api" / "axl" / "getCCMVersion" / "response.txt"
             self.assertTrue(request.exists())
             self.assertTrue(response.exists())
+            self.assertIn("POST https://10.51.200.8:8443/axl/ HTTP/1.1", request.read_text(encoding="utf-8"))
+            self.assertNotIn("Authorization", request.read_text(encoding="utf-8"))
+            self.assertIn("HTTP unknown", response.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

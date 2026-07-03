@@ -92,13 +92,21 @@ class AxlCollector:
         envelope = _soap_envelope(body)
         endpoint = f"https://{context.publisher_ip}:{context.axl_port}/axl/"
         credentials = f"{context.gui_username}:{context.gui_password}".encode("utf-8")
+        request_headers = {
+            "Content-Type": "text/xml; charset=utf-8",
+            "SOAPAction": f'CUCM:DB ver=11.5 "{operation}"',
+        }
+        request_artifact = _format_http_request(
+            endpoint,
+            headers=request_headers,
+            body=envelope,
+        )
         request = urllib.request.Request(
             endpoint,
             data=envelope.encode("utf-8"),
             headers={
                 "Authorization": "Basic " + base64.b64encode(credentials).decode("ascii"),
-                "Content-Type": "text/xml; charset=utf-8",
-                "SOAPAction": f'CUCM:DB ver=11.5 "{operation}"',
+                **request_headers,
             },
             method="POST",
         )
@@ -111,16 +119,54 @@ class AxlCollector:
                 context=ssl_context,
             ) as response:
                 response_text = response.read().decode("utf-8", errors="replace")
+                response_artifact = _format_http_response(
+                    status=getattr(response, "status", None),
+                    reason=getattr(response, "reason", None),
+                    headers=getattr(response, "headers", None),
+                    body=response_text,
+                )
         except urllib.error.HTTPError as exc:
             response_text = exc.read().decode("utf-8", errors="replace")
-            _write_api_artifact(context, context.publisher_ip, operation, envelope, response_text)
-            raise AxlCollectionError(f"HTTP {exc.code}: {response_text[:300]}") from exc
+            response_artifact = _format_http_response(
+                status=exc.code,
+                reason=exc.reason,
+                headers=exc.headers,
+                body=response_text,
+            )
+            _write_api_artifact(
+                context,
+                context.publisher_ip,
+                operation,
+                request_artifact,
+                response_artifact,
+            )
+            raise AxlCollectionError(f"HTTP {exc.code}: {_response_summary(response_text)}") from exc
         except urllib.error.URLError as exc:
+            _write_api_artifact(
+                context,
+                context.publisher_ip,
+                operation,
+                request_artifact,
+                f"TRANSPORT ERROR\n{exc.reason}\n",
+            )
             raise AxlCollectionError(str(exc.reason)) from exc
         except OSError as exc:
+            _write_api_artifact(
+                context,
+                context.publisher_ip,
+                operation,
+                request_artifact,
+                f"OS ERROR\n{exc}\n",
+            )
             raise AxlCollectionError(str(exc)) from exc
 
-        _write_api_artifact(context, context.publisher_ip, operation, envelope, response_text)
+        _write_api_artifact(
+            context,
+            context.publisher_ip,
+            operation,
+            request_artifact,
+            response_artifact,
+        )
         return response_text
 
 
@@ -211,6 +257,40 @@ def _iter_local_name(element: ET.Element, local_name: str):
     for child in element.iter():
         if child.tag.rsplit("}", 1)[-1] == local_name:
             yield child
+
+
+def _format_http_request(endpoint: str, *, headers: dict[str, str], body: str) -> str:
+    header_lines = "\n".join(f"{name}: {value}" for name, value in sorted(headers.items()))
+    return f"POST {endpoint} HTTP/1.1\n{header_lines}\n\n{body}"
+
+
+def _format_http_response(
+    *,
+    status: int | None,
+    reason: str | None,
+    headers: object,
+    body: str,
+) -> str:
+    status_line = f"HTTP {status or 'unknown'}"
+    if reason:
+        status_line = f"{status_line} {reason}"
+    header_lines = _format_response_headers(headers)
+    if header_lines:
+        return f"{status_line}\n{header_lines}\n\n{body}"
+    return f"{status_line}\n\n{body}"
+
+
+def _format_response_headers(headers: object) -> str:
+    if headers is None:
+        return ""
+    if hasattr(headers, "items"):
+        return "\n".join(f"{name}: {value}" for name, value in headers.items())
+    return str(headers).strip()
+
+
+def _response_summary(response_text: str) -> str:
+    stripped = " ".join(response_text.split())
+    return stripped[:300]
 
 
 def _write_api_artifact(

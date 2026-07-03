@@ -150,6 +150,22 @@ class RunLogStore:
         shutil.copy2(source, destination)
         return destination
 
+    def copy_artifact_tree(self, source_root: Path, relative_path: str | Path) -> Path:
+        """Copy one run's raw and normalized artifacts into the log bundle."""
+
+        destination = self.root / relative_path
+        destination.mkdir(parents=True, exist_ok=True)
+        if not source_root.exists():
+            return destination
+
+        for source in sorted(source_root.rglob("*")):
+            if not source.is_file():
+                continue
+            target = destination / source.relative_to(source_root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        return destination
+
 
 def write_preflight_artifacts(store: ArtifactStore, publisher: str, preflight: Any) -> Path:
     """Write Publisher preflight evidence for parser/debug review."""
@@ -204,10 +220,18 @@ def write_log_bundle(
         store.write_json("collector_warnings.json", _collector_warnings(report)),
     ]
     if artifact_store is not None:
+        copied_root = store.copy_artifact_tree(artifact_store.root, "artifacts")
         paths.append(
             store.write_text(
                 "artifact_index.txt",
-                "\n".join(_artifact_index(artifact_store.root)) + "\n",
+                "\n".join(_artifact_index(copied_root, base=copied_root)) + "\n",
+            )
+        )
+        paths.append(
+            store.write_text(
+                "artifact_source.txt",
+                f"Original assessment artifact root: {artifact_store.root}\n"
+                f"Copied troubleshooting artifact root: {copied_root}\n",
             )
         )
     if html_report_path is not None and html_report_path.exists():
@@ -229,10 +253,15 @@ def _collector_warnings(report: Any) -> list[dict[str, Any]]:
     return warnings
 
 
-def _artifact_index(root: Path) -> list[str]:
+def _artifact_index(root: Path, *, base: Path | None = None) -> list[str]:
     if not root.exists():
         return []
-    return [str(path) for path in sorted(root.rglob("*")) if path.is_file()]
+    base_path = base or root
+    return [
+        str(path.relative_to(base_path) if path.is_relative_to(base_path) else path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    ]
 
 
 def _category_path(value: str) -> Path:
