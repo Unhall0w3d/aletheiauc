@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import urllib.error
 import unittest
 import tempfile
 from pathlib import Path
@@ -49,6 +51,32 @@ LIST_PROCESS_NODE_RESPONSE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+INCORRECT_AXL_VERSION_RESPONSE = """<!-- custom Cisco error page --><html>
+<body>
+<div id="content-header">HTTP Status 599 - Incorrect axl version. Supported axl versions are 12.x, 14.0 and 15.0</div>
+<p><b>Message:</b> Incorrect axl version. Supported axl versions are 12.x, 14.0 and 15.0</p>
+</body>
+</html>"""
+
+
+class FakeResponse:
+    status = 200
+    reason = "OK"
+    headers = {"content-type": "text/xml"}
+
+    def __init__(self, body: str):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self) -> bytes:
+        return self.body.encode("utf-8")
+
+
 class AxlCollectorTests(unittest.TestCase):
     def test_axl_collector_normalizes_version_and_process_nodes(self) -> None:
         context = CollectionContext(
@@ -79,15 +107,39 @@ class AxlCollectorTests(unittest.TestCase):
         self.assertIn("credentials are missing", result.warnings[0])
 
     def test_axl_call_writes_raw_request_and_response_artifacts(self) -> None:
-        class FakeResponse:
-            def __enter__(self):
-                return self
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = ArtifactStore.create(Path(tmpdir), "lab")
+            context = CollectionContext(
+                publisher_ip="10.51.200.8",
+                gui_username="apiuser",
+                gui_password="secret",
+                artifact_store=store,
+            )
 
-            def __exit__(self, exc_type, exc, traceback):
-                return False
+            with patch(
+                "cisco_collab_health.collectors.axl.urllib.request.urlopen",
+                return_value=FakeResponse(GET_VERSION_RESPONSE),
+            ):
+                AxlCollector()._call_axl(context, "getCCMVersion", "<axl:getCCMVersion />")
 
-            def read(self) -> bytes:
-                return GET_VERSION_RESPONSE.encode("utf-8")
+            request = store.root / "nodes" / "10.51.200.8" / "api" / "axl" / "getCCMVersion" / "request.txt"
+            response = store.root / "nodes" / "10.51.200.8" / "api" / "axl" / "getCCMVersion" / "response.txt"
+            self.assertTrue(request.exists())
+            self.assertTrue(response.exists())
+            self.assertIn("POST https://10.51.200.8:8443/axl/ HTTP/1.1", request.read_text(encoding="utf-8"))
+            self.assertNotIn("Authorization", request.read_text(encoding="utf-8"))
+            self.assertIn("CUCM:DB ver=14.0", request.read_text(encoding="utf-8"))
+            self.assertIn("http://www.cisco.com/AXL/API/14.0", request.read_text(encoding="utf-8"))
+            self.assertIn("HTTP 200 OK", response.read_text(encoding="utf-8"))
+
+    def test_axl_call_retries_with_highest_supported_version(self) -> None:
+        http_error = urllib.error.HTTPError(
+            url="https://10.51.200.8:8443/axl/",
+            code=599,
+            msg="",
+            hdrs={"content-type": "text/html"},
+            fp=io.BytesIO(INCORRECT_AXL_VERSION_RESPONSE.encode("utf-8")),
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             store = ArtifactStore.create(Path(tmpdir), "lab")
@@ -98,16 +150,43 @@ class AxlCollectorTests(unittest.TestCase):
                 artifact_store=store,
             )
 
-            with patch("cisco_collab_health.collectors.axl.urllib.request.urlopen", return_value=FakeResponse()):
-                AxlCollector()._call_axl(context, "getCCMVersion", "<axl:getCCMVersion />")
+            with patch(
+                "cisco_collab_health.collectors.axl.urllib.request.urlopen",
+                side_effect=[http_error, FakeResponse(GET_VERSION_RESPONSE)],
+            ) as urlopen:
+                response = AxlCollector()._call_axl(
+                    context,
+                    "getCCMVersion",
+                    "<axl:getCCMVersion />",
+                )
+                http_error.close()
 
-            request = store.root / "nodes" / "10.51.200.8" / "api" / "axl" / "getCCMVersion" / "request.txt"
-            response = store.root / "nodes" / "10.51.200.8" / "api" / "axl" / "getCCMVersion" / "response.txt"
-            self.assertTrue(request.exists())
-            self.assertTrue(response.exists())
-            self.assertIn("POST https://10.51.200.8:8443/axl/ HTTP/1.1", request.read_text(encoding="utf-8"))
-            self.assertNotIn("Authorization", request.read_text(encoding="utf-8"))
-            self.assertIn("HTTP unknown", response.read_text(encoding="utf-8"))
+            first_request = (
+                store.root
+                / "nodes"
+                / "10.51.200.8"
+                / "api"
+                / "axl"
+                / "getCCMVersion"
+                / "request.txt"
+            )
+            retry_request = (
+                store.root
+                / "nodes"
+                / "10.51.200.8"
+                / "api"
+                / "axl"
+                / "getCCMVersion_retry_axl_15.0"
+                / "request.txt"
+            )
+            first_request_text = first_request.read_text(encoding="utf-8")
+            retry_request_text = retry_request.read_text(encoding="utf-8")
+
+        self.assertEqual(response, GET_VERSION_RESPONSE)
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertIn("CUCM:DB ver=14.0", first_request_text)
+        self.assertIn("CUCM:DB ver=15.0", retry_request_text)
+        self.assertIn("http://www.cisco.com/AXL/API/15.0", retry_request_text)
 
 
 if __name__ == "__main__":

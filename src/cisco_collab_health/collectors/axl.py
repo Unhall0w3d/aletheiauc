@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import ssl
 import urllib.error
 import urllib.request
@@ -11,7 +12,7 @@ import xml.etree.ElementTree as ET
 from cisco_collab_health.collectors.base import CollectionContext, CollectionResult
 from cisco_collab_health.models.facts import AssessmentFacts, ClusterIdentity, CollaborationNode
 
-AXL_NAMESPACE = "http://www.cisco.com/AXL/API/11.5"
+DEFAULT_AXL_VERSION = "14.0"
 SOAP_NAMESPACE = "http://schemas.xmlsoap.org/soap/envelope/"
 
 
@@ -89,12 +90,36 @@ class AxlCollector:
         if not context.gui_username or not context.gui_password:
             raise AxlCollectionError("GUI/API credentials are missing.")
 
-        envelope = _soap_envelope(body)
+        axl_version = DEFAULT_AXL_VERSION
+        try:
+            return self._send_axl_request(context, operation, body, axl_version)
+        except AxlVersionError as exc:
+            retry_version = exc.highest_supported_version
+            if retry_version == axl_version:
+                raise AxlCollectionError(str(exc)) from exc
+            return self._send_axl_request(
+                context,
+                operation,
+                body,
+                retry_version,
+                artifact_operation=f"{operation}_retry_axl_{retry_version}",
+            )
+
+    def _send_axl_request(
+        self,
+        context: CollectionContext,
+        operation: str,
+        body: str,
+        axl_version: str,
+        *,
+        artifact_operation: str | None = None,
+    ) -> str:
+        envelope = _soap_envelope(body, axl_version)
         endpoint = f"https://{context.publisher_ip}:{context.axl_port}/axl/"
         credentials = f"{context.gui_username}:{context.gui_password}".encode("utf-8")
         request_headers = {
             "Content-Type": "text/xml; charset=utf-8",
-            "SOAPAction": f'CUCM:DB ver=11.5 "{operation}"',
+            "SOAPAction": f'CUCM:DB ver={axl_version} "{operation}"',
         }
         request_artifact = _format_http_request(
             endpoint,
@@ -136,16 +161,23 @@ class AxlCollector:
             _write_api_artifact(
                 context,
                 context.publisher_ip,
-                operation,
+                artifact_operation or operation,
                 request_artifact,
                 response_artifact,
             )
+            supported_versions = _supported_axl_versions(response_text)
+            if _is_incorrect_axl_version_response(response_text) and supported_versions:
+                raise AxlVersionError(
+                    attempted_version=axl_version,
+                    supported_versions=supported_versions,
+                    response_summary=_response_summary(response_text),
+                ) from exc
             raise AxlCollectionError(f"HTTP {exc.code}: {_response_summary(response_text)}") from exc
         except urllib.error.URLError as exc:
             _write_api_artifact(
                 context,
                 context.publisher_ip,
-                operation,
+                artifact_operation or operation,
                 request_artifact,
                 f"TRANSPORT ERROR\n{exc.reason}\n",
             )
@@ -154,7 +186,7 @@ class AxlCollector:
             _write_api_artifact(
                 context,
                 context.publisher_ip,
-                operation,
+                artifact_operation or operation,
                 request_artifact,
                 f"OS ERROR\n{exc}\n",
             )
@@ -163,7 +195,7 @@ class AxlCollector:
         _write_api_artifact(
             context,
             context.publisher_ip,
-            operation,
+            artifact_operation or operation,
             request_artifact,
             response_artifact,
         )
@@ -174,9 +206,30 @@ class AxlCollectionError(RuntimeError):
     """Raised when an AXL collection operation fails."""
 
 
-def _soap_envelope(body: str) -> str:
+class AxlVersionError(AxlCollectionError):
+    """Raised when CUCM rejects the requested AXL schema version."""
+
+    def __init__(
+        self,
+        *,
+        attempted_version: str,
+        supported_versions: list[str],
+        response_summary: str,
+    ) -> None:
+        self.attempted_version = attempted_version
+        self.supported_versions = supported_versions
+        self.highest_supported_version = _highest_version(supported_versions)
+        super().__init__(
+            "Incorrect AXL version "
+            f"{attempted_version}; retrying with {self.highest_supported_version}. "
+            f"Response: {response_summary}"
+        )
+
+
+def _soap_envelope(body: str, axl_version: str) -> str:
+    axl_namespace = f"http://www.cisco.com/AXL/API/{axl_version}"
     return f"""<?xml version="1.0" encoding="utf-8"?>
-<soapenv:Envelope xmlns:soapenv="{SOAP_NAMESPACE}" xmlns:axl="{AXL_NAMESPACE}">
+<soapenv:Envelope xmlns:soapenv="{SOAP_NAMESPACE}" xmlns:axl="{axl_namespace}">
   <soapenv:Body>
     {body}
   </soapenv:Body>
@@ -291,6 +344,31 @@ def _format_response_headers(headers: object) -> str:
 def _response_summary(response_text: str) -> str:
     stripped = " ".join(response_text.split())
     return stripped[:300]
+
+
+def _is_incorrect_axl_version_response(response_text: str) -> bool:
+    return "incorrect axl version" in response_text.lower()
+
+
+def _supported_axl_versions(response_text: str) -> list[str]:
+    match = re.search(
+        r"Supported\s+axl\s+versions\s+are\s+(.+?)(?:<|\n|$)",
+        response_text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return []
+    version_text = match.group(1)
+    return re.findall(r"\d+(?:\.\d+)?(?:\.x)?", version_text)
+
+
+def _highest_version(versions: list[str]) -> str:
+    return max(versions, key=_version_sort_key)
+
+
+def _version_sort_key(version: str) -> tuple[int, ...]:
+    normalized = version.lower().replace(".x", ".0")
+    return tuple(int(part) for part in normalized.split(".") if part.isdigit())
 
 
 def _write_api_artifact(

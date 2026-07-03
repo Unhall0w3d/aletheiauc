@@ -27,6 +27,7 @@ Current capabilities:
 
 - Core pipeline contracts
 - Initial AXL collector for `getCCMVersion` and `listProcessNode`
+- AXL schema retry when CUCM reports that the requested AXL version is unsupported
 - Publisher preflight and interface reachability checks
 - Initial health rule runner for collected identity/node facts
 - Terminal Executive Summary output
@@ -35,6 +36,9 @@ Current capabilities:
 - Placeholder RISPort, Serviceability, and CLI fallback collectors
 
 The current real API implementation is limited to initial AXL collection.
+AXL requests start with schema version `14.0`. If CUCM returns an
+`Incorrect axl version` response that lists supported versions, Helios retries
+the operation once with the highest version reported by the Publisher.
 
 ## Quick Start
 
