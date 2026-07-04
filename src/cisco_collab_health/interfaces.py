@@ -29,9 +29,17 @@ class InterfaceStatus:
     """Reachability result for one CUCM interface."""
 
     name: str
-    available: bool
     endpoint: str
+    transport_available: bool
+    wsdl_available: bool | None = None
+    authenticated_available: bool | None = None
     reason: str | None = None
+
+    @property
+    def available(self) -> bool:
+        """Backward-compatible alias for transport availability."""
+
+        return self.transport_available
 
 
 SocketProbe = Callable[[str, int, float], bool]
@@ -59,7 +67,7 @@ class PreflightResult:
 
     @property
     def available_interfaces(self) -> list[str]:
-        return [status.name for status in self.interfaces if status.available]
+        return [status.name for status in self.interfaces if status.transport_available]
 
 
 def default_cucm_probes(
@@ -112,8 +120,8 @@ def probe_interfaces(
         return [
             InterfaceStatus(
                 name="publisher",
-                available=False,
                 endpoint="",
+                transport_available=False,
                 reason="No Publisher IP or target was provided.",
             )
         ]
@@ -134,8 +142,8 @@ def probe_interfaces(
             statuses.append(
                 InterfaceStatus(
                     name=interface.name,
-                    available=False,
                     endpoint=endpoint,
+                    transport_available=False,
                     reason=str(exc),
                 )
             )
@@ -144,8 +152,8 @@ def probe_interfaces(
         statuses.append(
             InterfaceStatus(
                 name=interface.name,
-                available=available,
                 endpoint=endpoint,
+                transport_available=available,
                 reason=None if available else "TCP connection failed.",
             )
         )

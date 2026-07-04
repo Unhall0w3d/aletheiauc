@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cisco-collab-health"
 version = "0.1.0a0"
-description = "AletheiaUC Cisco Collaboration Health Assessment Tool"
+description = "AletheiaUC is a Cisco Collaboration health assessment tool focused on CUCM/SME."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -22,9 +22,9 @@ aletheiauc = "cisco_collab_health.cli:main"
 ccha = "cisco_collab_health.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Unhall0w3d/AletheiaUC"
-Repository = "https://github.com/Unhall0w3d/AletheiaUC"
-Issues = "https://github.com/Unhall0w3d/AletheiaUC/issues"
+Homepage = "https://github.com/unhall0w3d/aletheiauc"
+Repository = "https://github.com/unhall0w3d/aletheiauc"
+Issues = "https://github.com/unhall0w3d/aletheiauc/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

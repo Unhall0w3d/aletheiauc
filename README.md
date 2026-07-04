@@ -98,10 +98,14 @@ After a profile is loaded, AletheiaUC runs a Publisher preflight:
 - ping reachability
 - HTTPS base URL check on port 443
 - HTTPS base URL check on port 8443
-- AXL endpoint reachability
-- RISPort70 endpoint reachability
-- Control Center Services endpoint reachability
-- PerfMon endpoint reachability
+- AXL HTTPS transport reachability
+- RISPort70 HTTPS transport reachability
+- Control Center Services HTTPS transport reachability
+- PerfMon HTTPS transport reachability
+
+Preflight currently proves transport reachability only. It does not yet claim
+that WSDL retrieval or authenticated API operations succeeded. AXL
+authentication/operation validity is established when the AXL collector runs.
 
 Progress is shown with bracketed status messages such as `[STAGE]`, `[OK]`,
 `[WARN]`, and `[INFO]`. Raw command or API output should be stored as evidence

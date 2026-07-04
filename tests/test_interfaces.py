@@ -21,16 +21,18 @@ class InterfaceProbeTests(unittest.TestCase):
             [status.name for status in statuses],
             ["axl", "risport70", "control_center", "perfmon"],
         )
-        self.assertTrue(all(status.available for status in statuses))
+        self.assertTrue(all(status.transport_available for status in statuses))
+        self.assertTrue(all(status.wsdl_available is None for status in statuses))
+        self.assertTrue(all(status.authenticated_available is None for status in statuses))
 
     def test_probe_interfaces_reports_missing_publisher(self) -> None:
         statuses = probe_interfaces(CollectionContext())
 
         self.assertEqual(len(statuses), 1)
         self.assertEqual(statuses[0].name, "publisher")
-        self.assertFalse(statuses[0].available)
+        self.assertFalse(statuses[0].transport_available)
 
-    def test_publisher_preflight_combines_connectivity_and_api_status(self) -> None:
+    def test_publisher_preflight_reports_transport_status_only_for_interfaces(self) -> None:
         context = CollectionContext(publisher_ip="192.0.2.10")
 
         result = run_publisher_preflight(
@@ -51,6 +53,27 @@ class InterfaceProbeTests(unittest.TestCase):
         )
         self.assertFalse(result.connectivity[1].available)
         self.assertTrue(result.connectivity[2].available)
+        self.assertTrue(all(status.transport_available for status in result.interfaces))
+        self.assertTrue(all(status.wsdl_available is None for status in result.interfaces))
+        self.assertTrue(all(status.authenticated_available is None for status in result.interfaces))
+
+    def test_publisher_preflight_tcp_failure_limits_available_interfaces(self) -> None:
+        context = CollectionContext(publisher_ip="192.0.2.10")
+
+        result = run_publisher_preflight(
+            context,
+            ping_probe=lambda host, timeout: True,
+            http_probe=lambda url, timeout: (True, "checked"),
+            socket_probe=lambda host, port, timeout: port == 8443,
+            risport_port=8444,
+            control_center_port=8445,
+            perfmon_port=8446,
+        )
+
+        self.assertEqual(result.available_interfaces, ["axl"])
+        self.assertTrue(result.interfaces[0].transport_available)
+        self.assertFalse(result.interfaces[1].transport_available)
+        self.assertEqual(result.interfaces[1].reason, "TCP connection failed.")
 
     def test_publisher_preflight_supports_alternate_api_ports(self) -> None:
         context = CollectionContext(publisher_ip="192.0.2.10")

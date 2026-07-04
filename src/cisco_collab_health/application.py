@@ -300,12 +300,31 @@ def _print_preflight_status(preflight: PreflightResult, status: StatusPrinter) -
             status.warn(f"{message}{detail}")
 
     for interface in preflight.interfaces:
-        message = f"{interface.name}: {interface.endpoint}"
-        if interface.available:
-            status.ok(message)
+        transport_message = f"{interface.name} transport: {interface.endpoint}"
+        if interface.transport_available:
+            status.ok(transport_message)
         else:
             detail = f" - {interface.reason}" if interface.reason else ""
-            status.warn(f"{message}{detail}")
+            status.warn(f"{transport_message}{detail}")
+
+        if interface.wsdl_available is None:
+            status.info(f"{interface.name} WSDL: not yet tested")
+        elif interface.wsdl_available:
+            status.ok(f"{interface.name} WSDL: available")
+        else:
+            detail = f" - {interface.reason}" if interface.reason else ""
+            status.warn(f"{interface.name} WSDL: unavailable{detail}")
+
+        if interface.authenticated_available is None:
+            if interface.name == "axl":
+                status.info(f"{interface.name} authenticated operation: tested by collector")
+            else:
+                status.info(f"{interface.name} authenticated operation: not yet tested")
+        elif interface.authenticated_available:
+            status.ok(f"{interface.name} authenticated operation: available")
+        else:
+            detail = f" - {interface.reason}" if interface.reason else ""
+            status.warn(f"{interface.name} authenticated operation: unavailable{detail}")
 
     if preflight.available_interfaces:
         status.info("Enabled interfaces: " + ", ".join(preflight.available_interfaces))
