@@ -1,4 +1,4 @@
-"""Terminal status messages for Helios runs."""
+"""Terminal status messages for AletheiaUC runs."""
 
 from __future__ import annotations
 

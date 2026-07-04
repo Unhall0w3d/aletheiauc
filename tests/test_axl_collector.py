@@ -158,7 +158,7 @@ class AxlCollectorTests(unittest.TestCase):
 
         self.assertEqual(candidates[:2], ("15.0", "14.0"))
 
-    def test_axl_version_policy_selects_best_helios_supported_cucm_version(self) -> None:
+    def test_axl_version_policy_selects_best_aletheiauc_supported_cucm_version(self) -> None:
         policy = AxlVersionPolicy()
 
         retry = policy.best_supported_version(["12.x", "14.0", "15.0"], {"14.0"})

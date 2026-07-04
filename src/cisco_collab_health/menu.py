@@ -1,4 +1,4 @@
-"""Interactive menu flow for Helios CLI runs."""
+"""Interactive menu flow for AletheiaUC CLI runs."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ RunAssessment = Callable[[argparse.Namespace, StatusPrinter, RuntimeProfile | No
 
 
 def run_menu(args: argparse.Namespace, status: StatusPrinter, run_assessment: RunAssessment) -> int:
-    """Run the interactive Helios menu."""
+    """Run the interactive AletheiaUC menu."""
 
     while True:
         print()
-        print("Helios Main Menu")
+        print("AletheiaUC Main Menu")
         print("================")
         print("L. Load Profile")
         print("N. New Profile")
@@ -41,7 +41,7 @@ def run_menu(args: argparse.Namespace, status: StatusPrinter, run_assessment: Ru
             if result is not None:
                 return result
         elif choice == "q":
-            status.info("Exiting Helios")
+            status.info("Exiting AletheiaUC")
             return 0
         else:
             status.warn("Invalid selection")

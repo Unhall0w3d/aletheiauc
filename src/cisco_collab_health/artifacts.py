@@ -119,7 +119,7 @@ class ArtifactStore:
 
 @dataclass(frozen=True)
 class RunLogStore:
-    """Writes troubleshooting logs for one Helios run."""
+    """Writes troubleshooting logs for one AletheiaUC run."""
 
     root: Path
     run_id: str

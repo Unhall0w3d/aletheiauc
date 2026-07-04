@@ -1,6 +1,8 @@
-# Cisco Collaboration Health Assessment Tool
+# AletheiaUC
 
 An early alpha framework for assessing Cisco Collaboration environments.
+
+AletheiaUC was originally developed under the Helios working name.
 
 The project is currently focused on Cisco Unified Communications Manager
 and CUCM Session Management Edition environments, with an initial target of
@@ -37,7 +39,7 @@ Current capabilities:
 
 The current real API implementation is limited to initial AXL collection.
 AXL requests start with schema version `14.0`. If CUCM returns an
-`Incorrect axl version` response that lists supported versions, Helios retries
+`Incorrect axl version` response that lists supported versions, AletheiaUC retries
 the operation once with the highest version reported by the Publisher.
 
 ## Quick Start
@@ -51,13 +53,13 @@ python -m pip install -r requirements.txt
 Make the launcher executable:
 
 ```bash
-chmod +x helios.py
+chmod +x aletheiauc.py
 ```
 
-Run Helios:
+Run AletheiaUC:
 
 ```bash
-./helios.py
+./aletheiauc.py
 ```
 
 This launcher is the main user entry point for a cloned repository. It opens the
@@ -72,7 +74,7 @@ Main menu options:
 - TEMP Test Options
 - Quit
 
-When a health assessment runs, Helios prints an Executive Summary in the
+When a health assessment runs, AletheiaUC prints an Executive Summary in the
 terminal, writes a styled HTML report under `reports/`, and writes local
 parser/debug artifacts under `assessment_runs/` by default. It also writes a
 shareable troubleshooting log bundle under `logs/`.
@@ -91,7 +93,7 @@ For a new profile, the CLI prompts for:
 If an FQDN is entered, it is resolved and the resulting IP address is used for
 collector context.
 
-After a profile is loaded, Helios runs a Publisher preflight:
+After a profile is loaded, AletheiaUC runs a Publisher preflight:
 
 - ping reachability
 - HTTPS base URL check on port 443
@@ -114,51 +116,51 @@ PYTHONPATH=src python -m unittest discover -s tests
 To run a framework smoke test without prompting for connection details:
 
 ```bash
-./helios.py --skip-profile
+./aletheiauc.py --skip-profile
 ```
 
 To choose an explicit HTML report path:
 
 ```bash
-./helios.py --html-report reports/lab-assessment.html
+./aletheiauc.py --html-report reports/lab-assessment.html
 ```
 
 To choose an explicit artifact directory:
 
 ```bash
-./helios.py --artifact-dir assessment_runs
+./aletheiauc.py --artifact-dir assessment_runs
 ```
 
 API request/response artifacts redact secret headers and password-like XML tags
 by default. To choose a different local artifact redaction mode:
 
 ```bash
-./helios.py --artifact-redaction secrets
-./helios.py --artifact-redaction none
+./aletheiauc.py --artifact-redaction secrets
+./aletheiauc.py --artifact-redaction none
 ```
 
 To disable local artifact writing:
 
 ```bash
-./helios.py --no-artifacts
+./aletheiauc.py --no-artifacts
 ```
 
 To choose an explicit troubleshooting log directory:
 
 ```bash
-./helios.py --log-dir logs
+./aletheiauc.py --log-dir logs
 ```
 
 To disable troubleshooting log writing:
 
 ```bash
-./helios.py --no-logs
+./aletheiauc.py --no-logs
 ```
 
 To print JSON instead of the terminal Executive Summary:
 
 ```bash
-./helios.py --format json
+./aletheiauc.py --format json
 ```
 
 Publisher preflight runs automatically after profile load. The legacy
@@ -166,7 +168,7 @@ Publisher preflight runs automatically after profile load. The legacy
 no longer required:
 
 ```bash
-./helios.py --probe-interfaces
+./aletheiauc.py --probe-interfaces
 ```
 
 Future collectors will use preflight status to avoid running collectors for
@@ -177,30 +179,31 @@ avoid unbounded full-cluster inventory requests on large systems. Enable it only
 for small lab clusters until bounded paging is implemented:
 
 ```bash
-./helios.py --collect-phone-inventory
+./aletheiauc.py --collect-phone-inventory
 ```
 
 If a lab uses alternate API ports, override them at startup:
 
 ```bash
-./helios.py --axl-port 9443 --risport-port 9444 --control-center-port 9445 --perfmon-port 9446
+./aletheiauc.py --axl-port 9443 --risport-port 9444 --control-center-port 9445 --perfmon-port 9446
 ```
 
-By default, Helios allows CUCM self-signed or privately issued HTTPS
+By default, AletheiaUC allows CUCM self-signed or privately issued HTTPS
 certificates during alpha testing. To verify CUCM HTTPS certificates:
 
 ```bash
-./helios.py --verify-tls
-./helios.py --verify-tls --ca-bundle /path/to/ca.pem
+./aletheiauc.py --verify-tls
+./aletheiauc.py --verify-tls --ca-bundle /path/to/ca.pem
 ```
 
 Use `--insecure` to explicitly keep certificate verification disabled.
 
-If you prefer installing Helios as a Python package during development, the
-`ccha` console command is also available after an editable install:
+If you prefer installing AletheiaUC as a Python package during development, the
+`aletheiauc` and `ccha` console commands are available after an editable install:
 
 ```bash
 python -m pip install -e .
+aletheiauc
 ccha
 ```
 
@@ -229,18 +232,18 @@ again on future runs.
 Use `--reset-profile` to replace the saved profile:
 
 ```bash
-./helios.py --reset-profile
+./aletheiauc.py --reset-profile
 ```
 
 Use `--no-save-credentials` to avoid storing passwords for the current run:
 
 ```bash
-./helios.py --no-save-credentials
+./aletheiauc.py --no-save-credentials
 ```
 
 ## Local Artifacts
 
-Helios writes local per-run artifacts for parser development, debugging, manual
+AletheiaUC writes local per-run artifacts for parser development, debugging, manual
 review, and future evidence traceability. These files are intentionally ignored
 by git and are separate from the human HTML files in `reports/`.
 
@@ -275,7 +278,7 @@ Reusable credentials should not be written to artifact files.
 
 ## Troubleshooting Logs
 
-Helios also writes a run-specific troubleshooting bundle under `logs/`.
+AletheiaUC also writes a run-specific troubleshooting bundle under `logs/`.
 
 Default layout:
 

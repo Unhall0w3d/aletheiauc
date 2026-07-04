@@ -20,8 +20,8 @@ class CliTests(unittest.TestCase):
             result = cli.main([])
 
         self.assertEqual(result, 0)
-        self.assertIn("Helios Main Menu", output.getvalue())
-        self.assertIn("[INFO] Exiting Helios", output.getvalue())
+        self.assertIn("AletheiaUC Main Menu", output.getvalue())
+        self.assertIn("[INFO] Exiting AletheiaUC", output.getvalue())
 
     def test_temp_menu_can_run_sample_assessment(self) -> None:
         output = io.StringIO()

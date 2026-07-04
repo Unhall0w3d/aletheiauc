@@ -44,7 +44,7 @@ class ReportBuilderTests(unittest.TestCase):
         payload = HtmlReportBuilder().build(self.report)
 
         self.assertIn("<!doctype html>", payload)
-        self.assertIn("Cisco Collaboration Health Assessment", payload)
+        self.assertIn("AletheiaUC Assessment", payload)
         self.assertIn("Cluster identity collected", payload)
         self.assertIn("Source: normalized_facts", payload)
 

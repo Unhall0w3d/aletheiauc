@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cisco-collab-health"
 version = "0.1.0a0"
-description = "Cisco Collaboration Health Assessment Tool"
+description = "AletheiaUC Cisco Collaboration Health Assessment Tool"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-  { name = "Cisco Collaboration Health Assessment Tool contributors" }
+  { name = "AletheiaUC contributors" }
 ]
 license = { file = "LICENSE" }
 dependencies = ["keyring>=25"]
@@ -18,13 +18,13 @@ dependencies = ["keyring>=25"]
 dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10"]
 
 [project.scripts]
+aletheiauc = "cisco_collab_health.cli:main"
 ccha = "cisco_collab_health.cli:main"
-helios = "cisco_collab_health.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Unhall0w3d/helios"
-Repository = "https://github.com/Unhall0w3d/helios"
-Issues = "https://github.com/Unhall0w3d/helios/issues"
+Homepage = "https://github.com/Unhall0w3d/AletheiaUC"
+Repository = "https://github.com/Unhall0w3d/AletheiaUC"
+Issues = "https://github.com/Unhall0w3d/AletheiaUC/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

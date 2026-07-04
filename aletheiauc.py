@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repository-local launcher for Helios."""
+"""Repository-local launcher for AletheiaUC."""
 
 from __future__ import annotations
 

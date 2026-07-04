@@ -253,7 +253,7 @@ def _write_manifest(
 
     store.write_manifest(
         {
-            "tool": "helios",
+            "tool": "aletheiauc",
             "profile_name": profile_name,
             "publisher_ip": publisher_ip,
             "skipped_profile": skipped_profile,
@@ -283,7 +283,7 @@ def _write_log_manifest(
 
     store.write_manifest(
         {
-            "tool": "helios",
+            "tool": "aletheiauc",
             "profile_name": profile_name,
             "publisher_ip": publisher_ip,
         }

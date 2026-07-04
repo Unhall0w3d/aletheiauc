@@ -19,8 +19,8 @@ _tls_policy_from_args = tls_policy_from_args
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ccha",
-        description="Cisco Collaboration Health Assessment Tool alpha runner.",
+        prog="aletheiauc",
+        description="AletheiaUC alpha runner for Cisco Collaboration health assessments.",
     )
     parser.add_argument(
         "--format",

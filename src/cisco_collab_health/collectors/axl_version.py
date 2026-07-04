@@ -11,7 +11,7 @@ SUPPORTED_AXL_VERSIONS = ("15.0", "14.0", "12.5", "12.0", "11.5")
 
 @dataclass(frozen=True)
 class AxlVersionPolicy:
-    """Selects AXL schema versions supported by Helios."""
+    """Selects AXL schema versions supported by AletheiaUC."""
 
     preferred: str = DEFAULT_AXL_VERSION
     supported: tuple[str, ...] = SUPPORTED_AXL_VERSIONS
