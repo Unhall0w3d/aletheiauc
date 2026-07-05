@@ -356,7 +356,41 @@ class AxlCollectorTests(unittest.TestCase):
             if call_args.args[1] == "listPhone"
         ]
         self.assertEqual(len(phone_calls), 2)
-        self.assertTrue(any("duplicate device names" in note for note in result.notes))
+        self.assertTrue(any("first unique result set as complete" in note for note in result.notes))
+
+    def test_axl_collector_treats_overfilled_broad_phone_page_as_complete(self) -> None:
+        context = CollectionContext(
+            publisher_ip="192.0.2.10",
+            gui_username="apiuser",
+            gui_password="secret",
+            collect_phone_inventory=True,
+            phone_inventory_page_size=1,
+            phone_inventory_max_devices=10,
+        )
+        collector = AxlCollector()
+
+        with patch.object(
+            collector,
+            "_call_axl_response",
+            side_effect=[
+                soap_response(GET_VERSION_RESPONSE, "getCCMVersion"),
+                soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
+                soap_response(LIST_PHONE_RESPONSE, "listPhone"),
+            ],
+        ) as call:
+            result = collector.collect(context)
+
+        self.assertEqual(
+            [device.name for device in result.facts.devices],
+            ["SEP001122334455", "CSFALICE"],
+        )
+        phone_calls = [
+            call_args
+            for call_args in call.call_args_list
+            if call_args.args[1] == "listPhone"
+        ]
+        self.assertEqual(len(phone_calls), 1)
+        self.assertTrue(any("broad query returned more devices" in note for note in result.notes))
 
     def test_axl_collector_stops_phone_paging_on_empty_page(self) -> None:
         context = CollectionContext(

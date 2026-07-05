@@ -233,6 +233,11 @@ Tune the inventory page size and maximum device count for lab/debug runs:
 ./aletheiauc.py --collect-phone-inventory --phone-inventory-page-size 500 --phone-inventory-max-devices 2000
 ```
 
+Phone inventory starts with a broad AXL query so user-generated device names are
+included. Prefix-based collection may be added later as a fallback for oversized
+clusters, but expected Cisco prefixes are not treated as the authoritative
+inventory boundary.
+
 AXL device-default load collection is temporarily disabled until the correct
 CUCM 15 `listDeviceDefaults` search criteria are validated from live output.
 

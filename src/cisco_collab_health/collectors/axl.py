@@ -185,12 +185,18 @@ class AxlCollector:
 
             if not new_devices:
                 notes.append(
-                    "AXL listPhone paging returned only duplicate device names; stopping "
-                    "inventory paging because first/skip was not honored by the response."
+                    "AXL listPhone broad query returned duplicate device names on a later "
+                    "page; treating the first unique result set as complete."
                 )
                 break
 
             facts.devices.extend(new_devices)
+            if len(devices) > first:
+                notes.append(
+                    "AXL listPhone broad query returned more devices than the requested "
+                    "page size; treating the returned unique result set as complete."
+                )
+                break
             if len(devices) < first:
                 break
             skip += len(devices)
