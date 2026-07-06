@@ -1,32 +1,39 @@
-"""AXL collector."""
+"""AXL collector implementation."""
 
 from __future__ import annotations
 
-from cisco_collab_health.collectors.axl_bodies import (
+from cisco_collab_health.collectors.axl.bodies import (
     get_ccm_version_body,
+    list_device_defaults_body,
+    list_device_pool_body,
     list_phone_body,
     list_process_node_body,
 )
-from cisco_collab_health.collectors.axl_errors import AxlCollectionError, AxlVersionError
-from cisco_collab_health.collectors.axl_parsers import (
+from cisco_collab_health.collectors.axl.errors import AxlCollectionError, AxlVersionError
+from cisco_collab_health.collectors.axl.parsers import (
     cluster_name_from_nodes,
+    DevicePoolRecord,
     find_first_text,
+    parse_device_load_defaults,
+    parse_device_pools,
     parse_phone_inventory,
     parse_process_nodes,
 )
-from cisco_collab_health.collectors.axl_version import (
+from cisco_collab_health.collectors.axl.version import (
     AxlVersionPolicy,
     is_incorrect_axl_version_response,
     response_summary,
     supported_axl_versions,
 )
-from cisco_collab_health.collectors.base import CollectionContext, CollectionResult
+from cisco_collab_health.collectors.base import CollectionResult
 from cisco_collab_health.models.evidence import EvidenceRef
 from cisco_collab_health.models.facts import (
     AssessmentFacts,
     ClusterIdentity,
     CollaborationNode,
+    DeviceInventoryFact,
 )
+from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.transport.soap import (
     SoapClient,
     SoapHttpError,
@@ -35,15 +42,11 @@ from cisco_collab_health.transport.soap import (
     SoapTransportError,
 )
 
+STATUS_PHONE_INVENTORY_SKIPPED = "axl.phone_inventory.skipped"
+
 
 class AxlCollector:
-    """Collects CUCM facts through the Publisher AXL API.
-
-    The first real implementation target is cluster node discovery. It should
-    connect to the Publisher using GUI/API credentials from ``CollectionContext``
-    and populate normalized ``CollaborationNode`` facts for the Publisher and
-    Subscribers before health rules run.
-    """
+    """Collects CUCM facts through the Publisher AXL API."""
 
     name = "axl"
 
@@ -60,6 +63,7 @@ class AxlCollector:
         warnings: list[str] = []
         evidence: list[EvidenceRef] = []
         notes: list[str] = []
+        status_flags: list[str] = []
         facts = AssessmentFacts()
 
         if not context.publisher_ip:
@@ -108,11 +112,11 @@ class AxlCollector:
 
         if context.collect_phone_inventory:
             self._collect_phone_inventory(context, facts, warnings, evidence, notes)
-            notes.append(
-                "AXL listDeviceDefaults collection is temporarily disabled until the "
-                "CUCM 15 search criteria are validated from live output."
-            )
+            if facts.devices:
+                self._collect_device_pool_enrichment(context, facts, warnings, evidence)
+            self._collect_device_load_defaults(context, facts, warnings, evidence)
         else:
+            status_flags.append(STATUS_PHONE_INVENTORY_SKIPPED)
             notes.append(
                 "AXL phone inventory skipped by default; use --collect-phone-inventory "
                 "to collect bounded listPhone inventory."
@@ -131,6 +135,7 @@ class AxlCollector:
             warnings=warnings,
             evidence=evidence,
             notes=notes,
+            status_flags=status_flags,
         )
 
     def discover_nodes(self, context: CollectionContext) -> list[CollaborationNode]:
@@ -206,6 +211,55 @@ class AxlCollector:
                 "AXL phone inventory reached configured maximum device limit "
                 f"({max_devices}); increase --phone-inventory-max-devices if needed."
             )
+
+    def _collect_device_pool_enrichment(
+        self,
+        context: CollectionContext,
+        facts: AssessmentFacts,
+        warnings: list[str],
+        evidence: list[EvidenceRef],
+    ) -> None:
+        try:
+            device_pool_response = self._call_axl_response(
+                context,
+                "listDevicePool",
+                list_device_pool_body(),
+            )
+        except AxlCollectionError as exc:
+            warnings.append(f"AXL listDevicePool failed: {exc}")
+            return
+
+        evidence.append(_evidence_from_soap_response(device_pool_response, context.publisher_ip))
+        try:
+            device_pools = parse_device_pools(device_pool_response.body)
+        except AxlCollectionError as exc:
+            warnings.append(f"AXL listDevicePool failed: {exc}")
+            return
+
+        facts.devices = _enrich_devices_from_device_pools(facts.devices, device_pools)
+
+    def _collect_device_load_defaults(
+        self,
+        context: CollectionContext,
+        facts: AssessmentFacts,
+        warnings: list[str],
+        evidence: list[EvidenceRef],
+    ) -> None:
+        try:
+            defaults_response = self._call_axl_response(
+                context,
+                "listDeviceDefaults",
+                list_device_defaults_body(),
+            )
+        except AxlCollectionError as exc:
+            warnings.append(f"AXL listDeviceDefaults failed: {exc}")
+            return
+
+        evidence.append(_evidence_from_soap_response(defaults_response, context.publisher_ip))
+        try:
+            facts.device_load_defaults.extend(parse_device_load_defaults(defaults_response.body))
+        except AxlCollectionError as exc:
+            warnings.append(f"AXL listDeviceDefaults failed: {exc}")
 
     def _call_axl(self, context: CollectionContext, operation: str, body: str) -> str:
         return self._call_axl_response(context, operation, body).body
@@ -319,3 +373,43 @@ def _evidence_from_soap_response(response: SoapResponse, node: str | None) -> Ev
         parser="cisco_collab_health.collectors.axl",
         confidence="high",
     )
+
+
+def _enrich_devices_from_device_pools(
+    devices: list[DeviceInventoryFact],
+    device_pools: list[DevicePoolRecord],
+) -> list[DeviceInventoryFact]:
+    pool_by_name = {
+        device_pool.name.strip().lower(): device_pool
+        for device_pool in device_pools
+        if device_pool.name.strip()
+    }
+    enriched_devices = []
+    for device in devices:
+        if not device.device_pool:
+            enriched_devices.append(device)
+            continue
+
+        device_pool = pool_by_name.get(device.device_pool.strip().lower())
+        if device_pool is None:
+            enriched_devices.append(device)
+            continue
+
+        source = device.source
+        if "AXL.listDevicePool" not in source:
+            source = f"{source}, AXL.listDevicePool"
+        enriched_devices.append(
+            DeviceInventoryFact(
+                name=device.name,
+                description=device.description,
+                model=device.model,
+                protocol=device.protocol,
+                device_pool=device.device_pool,
+                call_manager_group=device.call_manager_group or device_pool.call_manager_group,
+                location=device.location or device_pool.location,
+                region=device.region or device_pool.region,
+                configured_load=device.configured_load,
+                source=source,
+            )
+        )
+    return enriched_devices

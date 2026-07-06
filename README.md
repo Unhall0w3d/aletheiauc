@@ -71,7 +71,7 @@ This is not yet a production-ready assessment tool.
 Current capabilities:
 
 - Core pipeline contracts
-- Initial AXL collector for `getCCMVersion`, `listProcessNode`, and opt-in summary `listPhone`
+- Initial AXL collector for `getCCMVersion`, `listProcessNode`, opt-in summary `listPhone`, `listDevicePool` inventory enrichment, and `listDeviceDefaults`
 - AXL schema retry when CUCM reports that the requested AXL version is unsupported
 - Publisher preflight and interface reachability checks
 - Initial health rule runner for collected identity/node facts
@@ -82,8 +82,10 @@ Current capabilities:
 
 The current real API implementation is limited to initial AXL collection.
 AXL requests start with schema version `14.0`. If CUCM returns an
-`Incorrect axl version` response that lists supported versions, AletheiaUC retries
-the operation once with the highest version reported by the Publisher.
+`Incorrect axl version` response that lists supported versions, AletheiaUC
+selects the highest mutually supported schema version, retries with that
+version, and caches the winning schema version for later AXL operations during
+the same run.
 
 ## Quick Start
 
@@ -99,7 +101,7 @@ Make the launcher executable:
 chmod +x aletheiauc.py
 ```
 
-Run AletheiaUC:
+Run AletheiaUC from a cloned repository:
 
 ```bash
 ./aletheiauc.py
@@ -108,6 +110,15 @@ Run AletheiaUC:
 This launcher is the main user entry point for a cloned repository. It opens the
 interactive menu by default and loads the package from `src/` directly, so an
 editable package install is optional.
+
+If you install the package, the module and console-script entry points are also
+available:
+
+```bash
+python -m cisco_collab_health --help
+aletheiauc --help
+ccha --help
+```
 
 Main menu options:
 
@@ -240,8 +251,8 @@ included. Prefix-based collection may be added later as a fallback for oversized
 clusters, but expected Cisco prefixes are not treated as the authoritative
 inventory boundary.
 
-AXL device-default load collection is temporarily disabled until the correct
-CUCM 15 `listDeviceDefaults` search criteria are validated from live output.
+When phone inventory is enabled, AletheiaUC also collects `listDeviceDefaults`
+to normalize model/protocol default loads for the same run.
 
 If a lab uses alternate API ports, override them at startup:
 

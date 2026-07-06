@@ -128,7 +128,7 @@ def _device_coverage(report: AssessmentReport, collection_ran: bool) -> ReportCo
             detail="Device inventory facts were normalized.",
         )
 
-    if _has_note(report, "phone inventory skipped"):
+    if _has_status_flag(report, "axl.phone_inventory.skipped"):
         return ReportCoverageItem(
             name="Device inventory",
             status="skipped",
@@ -158,19 +158,12 @@ def _device_load_defaults_coverage(
             count=default_count,
             detail="Device default load facts were normalized.",
         )
-    if _has_note(report, "phone inventory skipped"):
+    if _has_status_flag(report, "axl.phone_inventory.skipped"):
         return ReportCoverageItem(
             name="Device load defaults",
             status="skipped",
             count=0,
             detail="AXL device defaults were skipped because phone inventory scope was skipped.",
-        )
-    if _has_note(report, "listDeviceDefaults collection is temporarily disabled"):
-        return ReportCoverageItem(
-            name="Device load defaults",
-            status="skipped",
-            count=0,
-            detail="AXL device defaults are temporarily disabled pending live criteria validation.",
         )
     return _count_coverage(
         "Device load defaults",
@@ -233,10 +226,9 @@ def _count_coverage(
     )
 
 
-def _has_note(report: AssessmentReport, needle: str) -> bool:
-    normalized_needle = needle.lower()
+def _has_status_flag(report: AssessmentReport, flag: str) -> bool:
     return any(
-        normalized_needle in note.lower()
+        flag == status_flag
         for result in report.collector_results
-        for note in result.notes
+        for status_flag in result.status_flags
     )

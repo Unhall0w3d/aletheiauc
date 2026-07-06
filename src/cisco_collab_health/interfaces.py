@@ -10,7 +10,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from cisco_collab_health.collectors.base import CollectionContext
+from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.transport.tls import build_ssl_context
 
 

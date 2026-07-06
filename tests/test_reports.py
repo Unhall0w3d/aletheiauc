@@ -96,6 +96,8 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("SIP trunks", payload)
         self.assertIn("Cisco CallManager", payload)
         self.assertIn("sample.synthetic", payload)
+        self.assertIn("Call Manager Group", payload)
+        self.assertIn("Region", payload)
 
     def test_html_report_puts_summaries_before_detailed_device_tables(self) -> None:
         payload = HtmlReportBuilder().build(self.report)
@@ -238,11 +240,11 @@ class ReportBuilderTests(unittest.TestCase):
                         model="Cisco 8845",
                         protocol="SIP",
                         device_pool="Default",
-                        call_manager_group=None,
+                        call_manager_group="CMG-PubSub",
                         location=None,
-                        region=None,
+                        region="Region-HQ",
                         configured_load=None,
-                        source="AXL.listPhone.summary",
+                        source="AXL.listPhone.summary, AXL.listDevicePool",
                     )
                 ],
             ),
@@ -265,8 +267,47 @@ class ReportBuilderTests(unittest.TestCase):
         payload = HtmlReportBuilder().build(report)
 
         self.assertIn("Source: AXL getCCMVersion and listProcessNode.", payload)
-        self.assertIn("Source: AXL listPhone summary inventory.", payload)
+        self.assertIn(
+            "Source: AXL listPhone summary inventory enriched by AXL listDevicePool.",
+            payload,
+        )
         self.assertIn("Source: RISPort70 SelectCmDeviceExt", payload)
+
+    def test_html_report_renders_enriched_device_inventory_fields(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                devices=[
+                    DeviceInventoryFact(
+                        name="SEP001122334455",
+                        description=None,
+                        model="Cisco 8845",
+                        protocol="SIP",
+                        device_pool="Default",
+                        call_manager_group="CMG-PubSub",
+                        location="HQ-Loc",
+                        region="Region-HQ",
+                        configured_load="sip8845.14-2-1",
+                        source="AXL.listPhone.summary, AXL.listDevicePool",
+                    )
+                ]
+            ),
+            collector_results=[
+                CollectionResult(
+                    collector_name="axl",
+                    facts=AssessmentFacts(),
+                    evidence=[
+                        EvidenceRef(source="AXL", operation="listPhone", confidence="medium"),
+                        EvidenceRef(source="AXL", operation="listDevicePool", confidence="medium"),
+                    ],
+                )
+            ],
+            findings=[],
+        )
+
+        payload = HtmlReportBuilder().build(report)
+
+        self.assertIn("CMG-PubSub", payload)
+        self.assertIn("Region-HQ", payload)
 
     def test_inventory_runtime_reconciliation_matches_by_device_name(self) -> None:
         reconciliation = build_inventory_runtime_reconciliation(
@@ -341,7 +382,9 @@ class ReportBuilderTests(unittest.TestCase):
                 CollectionResult(
                     collector_name="axl",
                     facts=AssessmentFacts(),
-                    notes=["AXL phone inventory skipped by default."],
+                    status_flags=[
+                        "axl.phone_inventory.skipped",
+                    ],
                 )
             ],
             findings=[],
@@ -382,7 +425,9 @@ class ReportBuilderTests(unittest.TestCase):
                 CollectionResult(
                     collector_name="axl",
                     facts=AssessmentFacts(),
-                    notes=["AXL phone inventory skipped by default."],
+                    status_flags=[
+                        "axl.phone_inventory.skipped",
+                    ],
                 )
             ],
             findings=[],

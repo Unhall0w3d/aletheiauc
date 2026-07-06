@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import cast
 
 from cisco_collab_health.artifacts import ArtifactStore
-from cisco_collab_health.collectors.base import CollectionContext
+from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.transport.tls import build_ssl_context
 
 SOAP_NAMESPACE = "http://schemas.xmlsoap.org/soap/envelope/"

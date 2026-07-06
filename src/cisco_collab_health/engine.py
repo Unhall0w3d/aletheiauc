@@ -6,13 +6,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from cisco_collab_health.collectors.base import (
-    CollectionContext,
     CollectionResult,
     Collector,
     CollectorError,
 )
 from cisco_collab_health.models.assessment import AssessmentReport
 from cisco_collab_health.models.facts import AssessmentFacts, CollectorIssueFact
+from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.rules.base import HealthRule
 
 

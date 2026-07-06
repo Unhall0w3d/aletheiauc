@@ -142,6 +142,30 @@ LIST_PHONE_EMPTY_RESPONSE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+LIST_DEVICE_POOL_RESPONSE = """<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <ns:listDevicePoolResponse xmlns:ns="http://www.cisco.com/AXL/API/14.0">
+      <return>
+        <devicePool uuid="{77777777-7777-7777-7777-777777777777}">
+          <name>Default</name>
+          <callManagerGroupName uuid="{88888888-8888-8888-8888-888888888888}">CMG-PubSub</callManagerGroupName>
+          <locationName uuid="{99999999-9999-9999-9999-999999999999}">HQ-Loc</locationName>
+          <regionName uuid="{AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA}">Region-HQ</regionName>
+        </devicePool>
+        <devicePool uuid="{BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB}">
+          <name>Remote</name>
+          <callManagerGroupName>CMG-Remote</callManagerGroupName>
+          <locationName>Remote-Loc</locationName>
+          <regionName>Region-Remote</regionName>
+        </devicePool>
+      </return>
+    </ns:listDevicePoolResponse>
+  </soapenv:Body>
+</soapenv:Envelope>
+"""
+
+
 LIST_DEVICE_DEFAULTS_RESPONSE = """<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
   <soapenv:Body>
@@ -240,6 +264,7 @@ class AxlCollectorTests(unittest.TestCase):
 
         self.assertEqual(result.warnings, [])
         self.assertTrue(any("phone inventory skipped" in note for note in result.notes))
+        self.assertIn("axl.phone_inventory.skipped", result.status_flags)
         self.assertIsNotNone(result.facts.cluster)
         self.assertEqual(result.facts.cluster.version, "14.0.1.10000-20")
         self.assertEqual(result.facts.cluster.name, "192.0.2.10")
@@ -266,6 +291,8 @@ class AxlCollectorTests(unittest.TestCase):
                 soap_response(GET_VERSION_RESPONSE, "getCCMVersion"),
                 soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
                 soap_response(LIST_PHONE_RESPONSE, "listPhone"),
+                soap_response(LIST_DEVICE_POOL_RESPONSE, "listDevicePool"),
+                soap_response(LIST_DEVICE_DEFAULTS_RESPONSE, "listDeviceDefaults"),
             ],
         ):
             result = collector.collect(context)
@@ -273,19 +300,30 @@ class AxlCollectorTests(unittest.TestCase):
         self.assertEqual(result.warnings, [])
         self.assertEqual(
             [evidence.operation for evidence in result.evidence],
-            ["getCCMVersion", "listProcessNode", "listPhone"],
+            [
+                "getCCMVersion",
+                "listProcessNode",
+                "listPhone",
+                "listDevicePool",
+                "listDeviceDefaults",
+            ],
         )
         self.assertEqual(
             [device.name for device in result.facts.devices],
             ["SEP001122334455", "CSFALICE"],
         )
         self.assertEqual(result.facts.devices[0].device_pool, "Default")
+        self.assertEqual(result.facts.devices[0].call_manager_group, "CMG-PubSub")
+        self.assertEqual(result.facts.devices[0].region, "Region-HQ")
         self.assertEqual(result.facts.devices[0].configured_load, "sip8845.14-2-1")
-        self.assertEqual(result.facts.devices[0].source, "AXL.listPhone.summary")
-        self.assertEqual(result.facts.device_load_defaults, [])
-        self.assertTrue(
-            any("listDeviceDefaults collection is temporarily disabled" in note for note in result.notes)
+        self.assertEqual(
+            result.facts.devices[0].source,
+            "AXL.listPhone.summary, AXL.listDevicePool",
         )
+        self.assertEqual(result.facts.devices[1].location, "Remote-Loc")
+        self.assertEqual(len(result.facts.device_load_defaults), 2)
+        self.assertEqual(result.facts.device_load_defaults[0].source, "AXL.listDeviceDefaults")
+        self.assertEqual(result.status_flags, [])
 
     def test_axl_collector_pages_phone_inventory_with_configured_bounds(self) -> None:
         context = CollectionContext(
@@ -306,6 +344,8 @@ class AxlCollectorTests(unittest.TestCase):
                 soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
                 soap_response(LIST_PHONE_RESPONSE, "listPhone"),
                 soap_response(LIST_PHONE_SECOND_PAGE_RESPONSE, "listPhone"),
+                soap_response(LIST_DEVICE_POOL_RESPONSE, "listDevicePool"),
+                soap_response(LIST_DEVICE_DEFAULTS_RESPONSE, "listDeviceDefaults"),
             ],
         ) as call:
             result = collector.collect(context)
@@ -342,6 +382,8 @@ class AxlCollectorTests(unittest.TestCase):
                 soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
                 soap_response(LIST_PHONE_RESPONSE, "listPhone"),
                 soap_response(LIST_PHONE_RESPONSE, "listPhone"),
+                soap_response(LIST_DEVICE_POOL_RESPONSE, "listDevicePool"),
+                soap_response(LIST_DEVICE_DEFAULTS_RESPONSE, "listDeviceDefaults"),
             ],
         ) as call:
             result = collector.collect(context)
@@ -376,6 +418,8 @@ class AxlCollectorTests(unittest.TestCase):
                 soap_response(GET_VERSION_RESPONSE, "getCCMVersion"),
                 soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
                 soap_response(LIST_PHONE_RESPONSE, "listPhone"),
+                soap_response(LIST_DEVICE_POOL_RESPONSE, "listDevicePool"),
+                soap_response(LIST_DEVICE_DEFAULTS_RESPONSE, "listDeviceDefaults"),
             ],
         ) as call:
             result = collector.collect(context)
@@ -410,12 +454,13 @@ class AxlCollectorTests(unittest.TestCase):
                 soap_response(GET_VERSION_RESPONSE, "getCCMVersion"),
                 soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
                 soap_response(LIST_PHONE_EMPTY_RESPONSE, "listPhone"),
+                soap_response(LIST_DEVICE_DEFAULTS_RESPONSE, "listDeviceDefaults"),
             ],
         ):
             result = collector.collect(context)
 
         self.assertEqual(result.facts.devices, [])
-        self.assertEqual(result.facts.device_load_defaults, [])
+        self.assertEqual(len(result.facts.device_load_defaults), 2)
 
     def test_axl_collector_ignores_enterprise_wide_data_process_node(self) -> None:
         context = CollectionContext(
@@ -433,6 +478,8 @@ class AxlCollectorTests(unittest.TestCase):
                 soap_response(GET_VERSION_RESPONSE, "getCCMVersion"),
                 soap_response(LIST_PROCESS_NODE_WITH_ENTERPRISE_DATA_RESPONSE, "listProcessNode"),
                 soap_response(LIST_PHONE_RESPONSE, "listPhone"),
+                soap_response(LIST_DEVICE_POOL_RESPONSE, "listDevicePool"),
+                soap_response(LIST_DEVICE_DEFAULTS_RESPONSE, "listDeviceDefaults"),
             ],
         ):
             result = collector.collect(context)
@@ -460,12 +507,63 @@ class AxlCollectorTests(unittest.TestCase):
                 soap_response(GET_VERSION_RESPONSE, "getCCMVersion"),
                 soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
                 soap_response("<not-xml", "listPhone"),
+                soap_response(LIST_DEVICE_DEFAULTS_RESPONSE, "listDeviceDefaults"),
             ],
         ):
             result = collector.collect(context)
 
         self.assertEqual(result.facts.devices, [])
         self.assertIn("AXL listPhone failed", result.warnings[0])
+
+    def test_axl_collector_warns_when_device_pool_enrichment_fails(self) -> None:
+        context = CollectionContext(
+            publisher_ip="192.0.2.10",
+            gui_username="apiuser",
+            gui_password="secret",
+            collect_phone_inventory=True,
+        )
+        collector = AxlCollector()
+
+        with patch.object(
+            collector,
+            "_call_axl_response",
+            side_effect=[
+                soap_response(GET_VERSION_RESPONSE, "getCCMVersion"),
+                soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
+                soap_response(LIST_PHONE_RESPONSE, "listPhone"),
+                soap_response("<not-xml", "listDevicePool"),
+                soap_response(LIST_DEVICE_DEFAULTS_RESPONSE, "listDeviceDefaults"),
+            ],
+        ):
+            result = collector.collect(context)
+
+        self.assertIn("AXL listDevicePool failed", result.warnings[0])
+        self.assertEqual(result.facts.devices[0].call_manager_group, None)
+
+    def test_axl_collector_warns_when_device_defaults_fail(self) -> None:
+        context = CollectionContext(
+            publisher_ip="192.0.2.10",
+            gui_username="apiuser",
+            gui_password="secret",
+            collect_phone_inventory=True,
+        )
+        collector = AxlCollector()
+
+        with patch.object(
+            collector,
+            "_call_axl_response",
+            side_effect=[
+                soap_response(GET_VERSION_RESPONSE, "getCCMVersion"),
+                soap_response(LIST_PROCESS_NODE_RESPONSE, "listProcessNode"),
+                soap_response(LIST_PHONE_RESPONSE, "listPhone"),
+                soap_response(LIST_DEVICE_POOL_RESPONSE, "listDevicePool"),
+                soap_response("<not-xml", "listDeviceDefaults"),
+            ],
+        ):
+            result = collector.collect(context)
+
+        self.assertIn("AXL listDeviceDefaults failed", result.warnings[0])
+        self.assertEqual(result.facts.device_load_defaults, [])
 
     def test_axl_phone_inventory_writes_page_specific_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -487,6 +585,8 @@ class AxlCollectorTests(unittest.TestCase):
                     FakeResponse(LIST_PROCESS_NODE_RESPONSE),
                     FakeResponse(LIST_PHONE_RESPONSE),
                     FakeResponse(LIST_PHONE_SECOND_PAGE_RESPONSE),
+                    FakeResponse(LIST_DEVICE_POOL_RESPONSE),
+                    FakeResponse(LIST_DEVICE_DEFAULTS_RESPONSE),
                 ],
             ):
                 result = AxlCollector().collect(context)
@@ -520,6 +620,16 @@ class AxlCollectorTests(unittest.TestCase):
             self.assertTrue(
                 str(result.evidence[3].artifact_path).endswith(
                     "listPhone_page_000002/response.txt"
+                )
+            )
+            self.assertTrue(
+                str(result.evidence[4].artifact_path).endswith(
+                    "listDevicePool/response.txt"
+                )
+            )
+            self.assertTrue(
+                str(result.evidence[5].artifact_path).endswith(
+                    "listDeviceDefaults/response.txt"
                 )
             )
 

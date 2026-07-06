@@ -15,11 +15,11 @@ from cisco_collab_health.artifacts import (
     write_preflight_artifacts,
 )
 from cisco_collab_health.collector_registry import select_collectors
-from cisco_collab_health.collectors.base import CollectionContext
 from cisco_collab_health.config import RuntimeProfile
 from cisco_collab_health.engine import AssessmentEngine
 from cisco_collab_health.interfaces import PreflightResult, run_publisher_preflight
 from cisco_collab_health.models.assessment import AssessmentReport
+from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.reports.html import HtmlReportBuilder
 from cisco_collab_health.reports.json import JsonReportBuilder
 from cisco_collab_health.reports.summary import ExecutiveSummaryBuilder

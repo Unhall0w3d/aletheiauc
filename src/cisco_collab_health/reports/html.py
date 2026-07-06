@@ -304,7 +304,8 @@ class HtmlReportBuilder:
         <thead>
           <tr>
             <th>Name</th><th>Model</th><th>Protocol</th>
-            <th>Device Pool</th><th>Location</th><th>Load</th>
+            <th>Device Pool</th><th>Call Manager Group</th><th>Location</th>
+            <th>Region</th><th>Load</th>
           </tr>
         </thead>
         <tbody>
@@ -453,7 +454,7 @@ class HtmlReportBuilder:
 
     def _device_rows(self, report: AssessmentReport) -> str:
         if not report.facts.devices:
-            return '<tr><td colspan="6">No devices inventoried.</td></tr>'
+            return '<tr><td colspan="8">No devices inventoried.</td></tr>'
 
         return "\n".join(
             (
@@ -462,7 +463,9 @@ class HtmlReportBuilder:
                 f"<td>{escape(display_text(device.model))}</td>"
                 f"<td>{escape(display_text(device.protocol))}</td>"
                 f"<td>{escape(display_text(device.device_pool))}</td>"
+                f"<td>{escape(display_text(device.call_manager_group))}</td>"
                 f"<td>{escape(display_text(device.location))}</td>"
+                f"<td>{escape(display_text(device.region))}</td>"
                 f"<td>{escape(display_text(device.configured_load))}</td>"
                 "</tr>"
             )
@@ -948,12 +951,22 @@ def _source_caption(section_name: str, report: AssessmentReport) -> str:
     if _is_sample_report(report):
         return '<p class="meta">Source: SampleCollector synthetic fixture data.</p>'
 
+    inventory_caption = "Source: AXL listPhone summary inventory."
+    detailed_inventory_caption = "Source: AXL listPhone summary inventory."
+    if any("AXL.listDevicePool" in device.source for device in report.facts.devices):
+        inventory_caption = (
+            "Source: AXL listPhone summary inventory enriched by AXL listDevicePool."
+        )
+        detailed_inventory_caption = (
+            "Source: AXL listPhone summary inventory enriched by AXL listDevicePool."
+        )
+
     axl_sections = {
         "Cluster": "Source: AXL getCCMVersion and listProcessNode.",
         "Discovered Nodes": "Source: AXL listProcessNode.",
-        "Device Inventory By Model": "Source: AXL listPhone summary inventory.",
+        "Device Inventory By Model": inventory_caption,
         "Device Load Summary": "Source: AXL listPhone summary inventory and device load default facts when collected.",
-        "Detailed Device Inventory": "Source: AXL listPhone summary inventory.",
+        "Detailed Device Inventory": detailed_inventory_caption,
     }
     planned_sections = {
         "Device Registration Summary": "Source: RISPort70 SelectCmDeviceExt. Real collector not implemented yet.",

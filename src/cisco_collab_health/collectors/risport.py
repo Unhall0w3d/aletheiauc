@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from cisco_collab_health.collectors.base import CollectionContext, CollectionResult
+from cisco_collab_health.collectors.base import CollectionResult
+from cisco_collab_health.models.runtime import CollectionContext
 
 
 class RisPortCollector:

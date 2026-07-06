@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cisco_collab_health.models.evidence import EvidenceRef
-from cisco_collab_health.collectors.base import CollectionContext, CollectionResult
+from cisco_collab_health.collectors.base import CollectionResult
 from cisco_collab_health.models.facts import (
     AssessmentFacts,
     ClusterIdentity,
@@ -15,6 +15,7 @@ from cisco_collab_health.models.facts import (
     PlatformCheckFact,
     ServiceStatusFact,
 )
+from cisco_collab_health.models.runtime import CollectionContext
 
 
 class SampleCollector:

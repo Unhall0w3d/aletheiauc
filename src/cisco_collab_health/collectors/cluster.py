@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from cisco_collab_health.collectors.base import CollectionContext
 from cisco_collab_health.models.facts import CollaborationNode
+from cisco_collab_health.models.runtime import CollectionContext
 
 
 class ClusterNodeDiscoveryCollector(Protocol):
