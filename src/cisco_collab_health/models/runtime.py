@@ -29,3 +29,9 @@ class CollectionContext:
     collect_phone_inventory: bool = False
     phone_inventory_page_size: int = 500
     phone_inventory_max_devices: int = 2000
+    diagnostic_capture: bool = False
+    diagnostic_max_devices: int = 2000
+    diagnostic_axl_page_size: int = 250
+    diagnostic_axl_max_records: int = 500
+    discovered_nodes: tuple[str, ...] = ()
+    discovered_device_names: tuple[str, ...] = ()

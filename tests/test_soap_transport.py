@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import tempfile
 import unittest
 import urllib.error
@@ -82,6 +83,11 @@ class SoapTransportTests(unittest.TestCase):
             response_artifact = artifact_dir / "response.txt"
             request_text = request_artifact.read_text(encoding="utf-8")
             response_text = response_artifact.read_text(encoding="utf-8")
+            attempt = json.loads(
+                (store.root / "operation_attempts.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()[0]
+            )
 
         self.assertEqual(response.body, "<response />")
         self.assertEqual(response.request_artifact_path, request_artifact)
@@ -90,6 +96,9 @@ class SoapTransportTests(unittest.TestCase):
         self.assertNotIn("Authorization", request_text)
         self.assertIn("http://www.cisco.com/AXL/API/14.0", request_text)
         self.assertIn("HTTP 200 OK", response_text)
+        self.assertEqual(attempt["operation"], "getCCMVersion")
+        self.assertEqual(attempt["outcome"], "success")
+        self.assertEqual(attempt["http_status"], 200)
 
     def test_send_writes_http_error_artifact_before_raising(self) -> None:
         http_error = urllib.error.HTTPError(

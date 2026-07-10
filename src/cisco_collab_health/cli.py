@@ -129,6 +129,32 @@ def build_parser() -> argparse.ArgumentParser:
         default=2000,
         help="Maximum phones to request through AXL listPhone in one run.",
     )
+    parser.add_argument(
+        "--diagnostic-capture",
+        action="store_true",
+        help=(
+            "Capture bounded read-only API discovery data for future collector development. "
+            "May produce large, customer-sensitive artifacts."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-max-devices",
+        type=int,
+        default=2000,
+        help="Maximum devices requested by the diagnostic RISPort snapshot (maximum 2000).",
+    )
+    parser.add_argument(
+        "--diagnostic-axl-page-size",
+        type=int,
+        default=250,
+        help="Page size for each diagnostic AXL inventory operation.",
+    )
+    parser.add_argument(
+        "--diagnostic-axl-max-records",
+        type=int,
+        default=500,
+        help="Maximum records retained per diagnostic AXL inventory operation.",
+    )
     tls_group = parser.add_mutually_exclusive_group()
     tls_group.add_argument(
         "--verify-tls",
@@ -175,6 +201,12 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.error("--phone-inventory-page-size must be at least 1")
     if args.phone_inventory_max_devices < 1:
         parser.error("--phone-inventory-max-devices must be at least 1")
+    if not 1 <= args.diagnostic_max_devices <= 2000:
+        parser.error("--diagnostic-max-devices must be between 1 and 2000")
+    if args.diagnostic_axl_page_size < 1:
+        parser.error("--diagnostic-axl-page-size must be at least 1")
+    if args.diagnostic_axl_max_records < 1:
+        parser.error("--diagnostic-axl-max-records must be at least 1")
 
 
 def _run(args: argparse.Namespace, status: StatusPrinter) -> int:

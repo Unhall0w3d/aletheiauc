@@ -51,6 +51,10 @@ def run_assessment(
         collect_phone_inventory=args.collect_phone_inventory,
         phone_inventory_page_size=args.phone_inventory_page_size,
         phone_inventory_max_devices=args.phone_inventory_max_devices,
+        diagnostic_capture=args.diagnostic_capture,
+        diagnostic_max_devices=args.diagnostic_max_devices,
+        diagnostic_axl_page_size=args.diagnostic_axl_page_size,
+        diagnostic_axl_max_records=args.diagnostic_axl_max_records,
     )
     run_started = datetime.now()
     artifact_store: ArtifactStore | None = None
@@ -83,6 +87,10 @@ def run_assessment(
             collect_phone_inventory=args.collect_phone_inventory,
             phone_inventory_page_size=args.phone_inventory_page_size,
             phone_inventory_max_devices=args.phone_inventory_max_devices,
+            diagnostic_capture=args.diagnostic_capture,
+            diagnostic_max_devices=args.diagnostic_max_devices,
+            diagnostic_axl_page_size=args.diagnostic_axl_page_size,
+            diagnostic_axl_max_records=args.diagnostic_axl_max_records,
             tls=tls_policy,
         )
         artifact_store = _create_artifact_store(args, status, profile_name, run_started)
@@ -133,6 +141,7 @@ def run_assessment(
     collectors = select_collectors(
         preflight if runtime_profile is not None else None,
         smoke_test=runtime_profile is None,
+        diagnostic_capture=args.diagnostic_capture and runtime_profile is not None,
     )
     if collectors:
         status.info("Collectors enabled: " + ", ".join(collector.name for collector in collectors))

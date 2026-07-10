@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from defusedxml import ElementTree as ET
+
 from cisco_collab_health.collectors.axl.bodies import (
+    diagnostic_list_body,
     get_ccm_version_body,
     list_device_defaults_body,
     list_device_pool_body,
@@ -43,6 +46,29 @@ from cisco_collab_health.transport.soap import (
 )
 
 STATUS_PHONE_INVENTORY_SKIPPED = "axl.phone_inventory.skipped"
+
+DIAGNOSTIC_AXL_OPERATIONS = (
+    ("listCallManagerGroup", "name", ("name",)),
+    ("listRegion", "name", ("name",)),
+    ("listLocation", "name", ("name",)),
+    (
+        "listSipTrunk",
+        "name",
+        ("name", "description", "devicePoolName", "locationName", "sipProfileName"),
+    ),
+    ("listRoutePattern", "pattern", ("pattern", "routePartitionName")),
+    ("listRoutePartition", "name", ("name", "description")),
+    ("listCss", "name", ("name", "description")),
+    ("listRouteGroup", "name", ("name", "distributionAlgorithm")),
+    ("listRouteList", "name", ("name", "description")),
+    ("listTransPattern", "pattern", ("pattern", "routePartitionName")),
+    ("listMediaResourceGroup", "name", ("name",)),
+    ("listMediaResourceList", "name", ("name",)),
+    ("listConferenceBridge", "name", ("name", "devicePoolName")),
+    ("listTranscoder", "name", ("name", "devicePoolName")),
+    ("listMtp", "name", ("name", "devicePoolName")),
+    ("listLine", "pattern", ("pattern", "routePartitionName", "description")),
+)
 
 
 class AxlCollector:
@@ -110,7 +136,7 @@ class AxlCollector:
         except AxlCollectionError as exc:
             warnings.append(f"AXL listProcessNode failed: {exc}")
 
-        if context.collect_phone_inventory:
+        if context.collect_phone_inventory or context.diagnostic_capture:
             self._collect_phone_inventory(context, facts, warnings, evidence, notes)
             if facts.devices:
                 self._collect_device_pool_enrichment(context, facts, warnings, evidence)
@@ -121,6 +147,9 @@ class AxlCollector:
                 "AXL phone inventory skipped by default; use --collect-phone-inventory "
                 "to collect bounded listPhone inventory."
             )
+
+        if context.diagnostic_capture:
+            self._collect_diagnostic_axl(context, warnings, evidence, notes)
 
         if facts.cluster is not None and facts.nodes:
             facts.cluster = ClusterIdentity(
@@ -261,6 +290,52 @@ class AxlCollector:
         except AxlCollectionError as exc:
             warnings.append(f"AXL listDeviceDefaults failed: {exc}")
 
+    def _collect_diagnostic_axl(
+        self,
+        context: CollectionContext,
+        warnings: list[str],
+        evidence: list[EvidenceRef],
+        notes: list[str],
+    ) -> None:
+        page_size = max(1, context.diagnostic_axl_page_size)
+        max_records = max(1, context.diagnostic_axl_max_records)
+        for operation, criteria_tag, returned_tags in DIAGNOSTIC_AXL_OPERATIONS:
+            captured = 0
+            while captured < max_records:
+                first = min(page_size, max_records - captured)
+                artifact_operation = f"diagnostic_{operation}_page_{captured:06d}"
+                try:
+                    response = self._call_axl_response(
+                        context,
+                        operation,
+                        diagnostic_list_body(
+                            operation,
+                            criteria_tag=criteria_tag,
+                            returned_tags=returned_tags,
+                            first=first,
+                            skip=captured,
+                        ),
+                        artifact_operation=artifact_operation,
+                    )
+                except AxlCollectionError as exc:
+                    warnings.append(f"Diagnostic AXL {operation} failed: {exc}")
+                    break
+                evidence.append(_evidence_from_soap_response(response, context.publisher_ip))
+                record_count = _list_response_record_count(response.body)
+                if record_count is None:
+                    notes.append(
+                        f"Diagnostic AXL {operation} response was captured but its record "
+                        "count could not be determined; paging stopped."
+                    )
+                    break
+                captured += record_count
+                if record_count < first:
+                    break
+            notes.append(
+                f"Diagnostic AXL {operation} captured up to {captured} record(s), "
+                f"bounded at {max_records}."
+            )
+
     def _call_axl(self, context: CollectionContext, operation: str, body: str) -> str:
         return self._call_axl_response(context, operation, body).body
 
@@ -290,12 +365,12 @@ class AxlCollector:
             axl_version = candidates.pop(0)
             if axl_version in attempted_versions:
                 continue
-            retry_artifact_operation = (
-                None
-                if not attempted_versions
-                else f"{operation}_retry_axl_{axl_version}"
-            )
-            request_artifact_operation = artifact_operation or retry_artifact_operation
+            request_artifact_operation: str | None
+            if attempted_versions:
+                base_operation = artifact_operation or operation
+                request_artifact_operation = f"{base_operation}_retry_axl_{axl_version}"
+            else:
+                request_artifact_operation = artifact_operation
             attempted_versions.add(axl_version)
             try:
                 response = self._send_axl_request(
@@ -413,3 +488,17 @@ def _enrich_devices_from_device_pools(
             )
         )
     return enriched_devices
+
+
+def _list_response_record_count(response_text: str) -> int | None:
+    try:
+        root = ET.fromstring(response_text)
+    except ET.ParseError:
+        return None
+    return_element = next(
+        (element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "return"),
+        None,
+    )
+    if return_element is None:
+        return 0
+    return sum(1 for child in list(return_element) if isinstance(child.tag, str))

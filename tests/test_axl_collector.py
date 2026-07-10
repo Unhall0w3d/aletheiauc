@@ -772,6 +772,47 @@ class AxlCollectorTests(unittest.TestCase):
         self.assertIn("CUCM:DB ver=15.0", retry_request_text)
         self.assertIn("http://www.cisco.com/AXL/API/15.0", retry_request_text)
 
+    def test_axl_paged_retry_preserves_the_initial_attempt_artifact(self) -> None:
+        http_error = urllib.error.HTTPError(
+            url="https://192.0.2.10:8443/axl/",
+            code=599,
+            msg="",
+            hdrs={"content-type": "text/html"},
+            fp=io.BytesIO(INCORRECT_AXL_VERSION_RESPONSE.encode("utf-8")),
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = ArtifactStore.create(Path(tmpdir), "lab")
+            context = CollectionContext(
+                publisher_ip="192.0.2.10",
+                gui_username="apiuser",
+                gui_password="secret",
+                artifact_store=store,
+            )
+            collector = AxlCollector()
+            with patch(
+                "cisco_collab_health.transport.soap.urllib.request.urlopen",
+                side_effect=[http_error, FakeResponse(LIST_PHONE_RESPONSE)],
+            ):
+                collector._call_axl_response(
+                    context,
+                    "listPhone",
+                    "<axl:listPhone />",
+                    artifact_operation="listPhone_page_000000",
+                )
+            http_error.close()
+
+            first = (
+                store.root
+                / "nodes/192.0.2.10/api/axl/listPhone_page_000000/response.txt"
+            )
+            retry = (
+                store.root
+                / "nodes/192.0.2.10/api/axl/"
+                "listPhone_page_000000_retry_axl_15.0/response.txt"
+            )
+            self.assertTrue(first.exists())
+            self.assertTrue(retry.exists())
+
     def test_axl_call_raises_clean_error_when_supported_retry_version_fails(self) -> None:
         context = CollectionContext(
             publisher_ip="192.0.2.10",

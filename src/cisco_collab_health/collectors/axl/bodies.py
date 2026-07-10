@@ -65,6 +65,27 @@ def list_device_pool_body() -> str:
     </axl:listDevicePool>"""
 
 
+def diagnostic_list_body(
+    operation: str,
+    *,
+    criteria_tag: str,
+    returned_tags: tuple[str, ...],
+    first: int,
+    skip: int,
+) -> str:
+    """Build one bounded AXL list request from a trusted operation specification."""
+
+    tags = "\n".join(f"        <{tag} />" for tag in returned_tags)
+    return f"""<axl:{operation} first="{first}" skip="{skip}">
+      <searchCriteria>
+        <{criteria_tag}>%</{criteria_tag}>
+      </searchCriteria>
+      <returnedTags>
+{tags}
+      </returnedTags>
+    </axl:{operation}>"""
+
+
 def _paging_attributes(*, first: int | None, skip: int | None) -> str:
     attributes = []
     if first is not None:

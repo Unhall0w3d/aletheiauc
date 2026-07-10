@@ -254,6 +254,45 @@ inventory boundary.
 When phone inventory is enabled, AletheiaUC also collects `listDeviceDefaults`
 to normalize model/protocol default loads for the same run.
 
+## Diagnostic Capture Mode
+
+Use diagnostic capture when a controlled lab run should retain additional
+read-only interface evidence for future parser and collector development:
+
+```bash
+./aletheiauc.py --diagnostic-capture
+```
+
+Diagnostic capture automatically includes the bounded AXL phone inventory and
+adds raw request/response evidence for:
+
+- Supported-interface WSDL retrieval on every discovered node
+- RISPort70 `selectCmDeviceExt` registration snapshot using the AXL device list
+  (or a bounded wildcard `selectCmDevice` fallback if AXL inventory is unavailable)
+- Control Center `getProductInformationList` and `soapGetServiceStatus` on every discovered node
+- PerfMon object/counter discovery plus `Processor`, `Memory`, and `Cisco CallManager` snapshots on every discovered node
+- Bounded AXL configuration discovery for call-manager groups, regions, locations,
+  SIP trunks, route patterns, partitions, CSSes, route groups/lists, translation
+  patterns, media resources, and lines
+
+All diagnostic calls are read-only. They are retained as raw evidence and are
+not yet treated as normalized health facts. Unsupported operations and
+authentication failures are also captured as artifacts and collector warnings.
+
+Diagnostic collection can produce large, customer-sensitive output. Keep the
+default bounds unless you are deliberately testing a lab with known capacity:
+
+```bash
+./aletheiauc.py --diagnostic-capture \
+  --diagnostic-max-devices 2000 \
+  --diagnostic-axl-page-size 250 \
+  --diagnostic-axl-max-records 500
+```
+
+`--diagnostic-max-devices` is limited to the documented RISPort maximum of
+2,000. `--diagnostic-axl-max-records` is a per-operation cap; the result is a
+diagnostic sample, not a claim of complete configuration inventory.
+
 If a lab uses alternate API ports, override them at startup:
 
 ```bash
@@ -345,6 +384,13 @@ Current artifacts include Publisher preflight data, raw AXL SOAP request/respons
 artifacts when AXL collection runs, normalized collector output, and per-node
 facts. Future SSH collectors should write raw command and stdout/stderr
 artifacts here before parsing.
+
+When diagnostic capture is enabled, `operation_attempts.jsonl` is also written
+at the run root. Each line records one SOAP or HTTP attempt: interface,
+operation, endpoint, node, schema/action metadata, timestamps, duration, HTTP
+outcome, byte counts, and request/response artifact paths. Retries use separate
+artifact directories so an initial error response is never overwritten by a
+successful retry.
 
 Reusable credentials should not be written to artifact files.
 

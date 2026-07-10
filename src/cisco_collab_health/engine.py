@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from dataclasses import replace
 
 from cisco_collab_health.collectors.base import (
     CollectionResult,
@@ -44,6 +45,17 @@ class AssessmentEngine:
                 )
             collector_results.append(result)
             facts.merge(result.facts)
+            discovered_nodes = tuple(
+                dict.fromkeys(node.address or node.name for node in facts.nodes)
+            )
+            discovered_device_names = tuple(
+                dict.fromkeys(device.name for device in facts.devices if device.name)
+            )
+            collection_context = replace(
+                collection_context,
+                discovered_nodes=discovered_nodes,
+                discovered_device_names=discovered_device_names,
+            )
             for warning in result.warnings:
                 facts.collector_issues.append(
                     CollectorIssueFact(

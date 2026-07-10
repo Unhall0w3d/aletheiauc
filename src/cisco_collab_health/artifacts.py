@@ -115,6 +115,15 @@ class ArtifactStore:
         content = f"$ {command}\n\n{output.rstrip()}\n"
         return self.write_node_text(node, "cli", filename, content)
 
+    def record_operation_attempt(self, payload: dict[str, Any]) -> Path:
+        """Append one API/HTTP attempt to the run diagnostic manifest."""
+
+        path = self.root / "operation_attempts.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(_to_jsonable(payload), sort_keys=True) + "\n")
+        return path
+
 
 @dataclass(frozen=True)
 class RunLogStore:

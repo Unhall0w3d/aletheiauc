@@ -6,7 +6,9 @@ import base64
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 from typing import cast
 
 from cisco_collab_health.artifacts import ArtifactStore
@@ -77,6 +79,8 @@ class SoapClient:
     """Sends SOAP requests with shared TLS, auth, and artifact behavior."""
 
     def send(self, request: SoapRequest, context: CollectionContext) -> SoapResponse:
+        started_at = datetime.now(UTC)
+        started_clock = monotonic()
         envelope = soap_envelope(
             request.body,
             namespace=request.namespace,
@@ -125,6 +129,11 @@ class SoapClient:
                 context,
                 artifact_request,
                 response_artifact,
+                started_at=started_at,
+                duration_seconds=monotonic() - started_clock,
+                outcome="http_error",
+                status=exc.code,
+                reason=str(exc.reason),
             )
             raise SoapHttpError(
                 status=exc.code,
@@ -136,11 +145,29 @@ class SoapClient:
             ) from exc
         except urllib.error.URLError as exc:
             response_artifact = f"TRANSPORT ERROR\n{exc.reason}\n"
-            self._write_artifact(request, context, artifact_request, response_artifact)
+            self._write_artifact(
+                request,
+                context,
+                artifact_request,
+                response_artifact,
+                started_at=started_at,
+                duration_seconds=monotonic() - started_clock,
+                outcome="transport_error",
+                reason=str(exc.reason),
+            )
             raise SoapTransportError(str(exc.reason)) from exc
         except OSError as exc:
             response_artifact = f"OS ERROR\n{exc}\n"
-            self._write_artifact(request, context, artifact_request, response_artifact)
+            self._write_artifact(
+                request,
+                context,
+                artifact_request,
+                response_artifact,
+                started_at=started_at,
+                duration_seconds=monotonic() - started_clock,
+                outcome="os_error",
+                reason=str(exc),
+            )
             raise SoapTransportError(str(exc)) from exc
 
         request_path, response_path = self._write_artifact(
@@ -148,6 +175,11 @@ class SoapClient:
             context,
             artifact_request,
             response_artifact,
+            started_at=started_at,
+            duration_seconds=monotonic() - started_clock,
+            outcome="success",
+            status=getattr(response, "status", None),
+            reason=str(getattr(response, "reason", "") or "") or None,
         )
         return SoapResponse(
             status=getattr(response, "status", None),
@@ -174,6 +206,12 @@ class SoapClient:
         context: CollectionContext,
         artifact_request: str,
         artifact_response: str,
+        *,
+        started_at: datetime,
+        duration_seconds: float,
+        outcome: str,
+        status: int | None = None,
+        reason: str | None = None,
     ) -> tuple[Path | None, Path | None]:
         store = context.artifact_store
         if store is None:
@@ -185,6 +223,26 @@ class SoapClient:
             request.artifact_operation or request.operation,
             request=artifact_request,
             response=artifact_response,
+        )
+        artifact_store.record_operation_attempt(
+            {
+                "interface": request.interface,
+                "operation": request.operation,
+                "artifact_operation": request.artifact_operation or request.operation,
+                "node": request.node,
+                "endpoint": request.endpoint,
+                "action": request.action,
+                "namespace": request.namespace,
+                "started_at": started_at,
+                "duration_seconds": round(duration_seconds, 6),
+                "outcome": outcome,
+                "http_status": status,
+                "reason": reason,
+                "request_bytes": len(artifact_request.encode("utf-8")),
+                "response_bytes": len(artifact_response.encode("utf-8")),
+                "request_artifact_path": paths[0],
+                "response_artifact_path": paths[1],
+            }
         )
         return paths
 

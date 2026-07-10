@@ -6,12 +6,14 @@ import unittest
 
 from cisco_collab_health.collectors.base import CollectionContext
 from cisco_collab_health.collectors.sample import SampleCollector
+from cisco_collab_health.collectors.base import CollectionResult
 from cisco_collab_health.engine import AssessmentEngine
 from cisco_collab_health.rules.basic import (
     ClusterIdentityRule,
     CollectorHealthRule,
     NodeReachabilityRule,
 )
+from cisco_collab_health.models.facts import AssessmentFacts, CollaborationNode
 
 
 class BrokenCollector:
@@ -20,6 +22,39 @@ class BrokenCollector:
     def collect(self, context: CollectionContext):
         del context
         raise RuntimeError("simulated collector failure")
+
+
+class NodeCollector:
+    name = "nodes"
+
+    def collect(self, context: CollectionContext) -> CollectionResult:
+        del context
+        return CollectionResult(
+            collector_name=self.name,
+            facts=AssessmentFacts(
+                nodes=[
+                    CollaborationNode(
+                        name="pub",
+                        address="192.0.2.10",
+                        role="publisher",
+                    )
+                ],
+                devices=[],
+            ),
+        )
+
+
+class ContextRecordingCollector:
+    name = "recording"
+
+    def __init__(self) -> None:
+        self.discovered_nodes: tuple[str, ...] = ()
+        self.discovered_device_names: tuple[str, ...] = ()
+
+    def collect(self, context: CollectionContext) -> CollectionResult:
+        self.discovered_nodes = context.discovered_nodes
+        self.discovered_device_names = context.discovered_device_names
+        return CollectionResult(collector_name=self.name, facts=AssessmentFacts())
 
 
 class AssessmentEngineTests(unittest.TestCase):
@@ -70,6 +105,13 @@ class AssessmentEngineTests(unittest.TestCase):
         self.assertEqual(len(report.findings), 1)
         self.assertEqual(report.findings[0].rule_id, "core.collector_health")
         self.assertIn("broken: error", report.findings[0].facts[0])
+
+    def test_later_collectors_receive_nodes_discovered_earlier_in_the_run(self) -> None:
+        recorder = ContextRecordingCollector()
+        AssessmentEngine(collectors=[NodeCollector(), recorder], rules=[]).run()
+
+        self.assertEqual(recorder.discovered_nodes, ("192.0.2.10",))
+        self.assertEqual(recorder.discovered_device_names, ())
 
 
 if __name__ == "__main__":

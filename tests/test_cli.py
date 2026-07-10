@@ -100,6 +100,48 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exc.exception.code, 2)
 
+    def test_diagnostic_capture_arguments_reach_collection_context(self) -> None:
+        contexts = []
+
+        def capture_context(self, context=None):
+            del self
+            contexts.append(context)
+            raise KeyboardInterrupt
+
+        with patch("cisco_collab_health.application.AssessmentEngine.run", capture_context):
+            result = cli.main(
+                [
+                    "--skip-profile",
+                    "--diagnostic-capture",
+                    "--diagnostic-max-devices",
+                    "250",
+                    "--diagnostic-axl-page-size",
+                    "50",
+                    "--diagnostic-axl-max-records",
+                    "100",
+                    "--no-html-report",
+                    "--no-artifacts",
+                    "--no-logs",
+                ]
+            )
+
+        self.assertEqual(result, 130)
+        self.assertTrue(contexts[0].diagnostic_capture)
+        self.assertEqual(contexts[0].diagnostic_max_devices, 250)
+        self.assertEqual(contexts[0].diagnostic_axl_page_size, 50)
+        self.assertEqual(contexts[0].diagnostic_axl_max_records, 100)
+
+    def test_diagnostic_capture_bounds_are_validated(self) -> None:
+        for arguments in (
+            ["--diagnostic-max-devices", "2001"],
+            ["--diagnostic-axl-page-size", "0"],
+            ["--diagnostic-axl-max-records", "0"],
+        ):
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(SystemExit) as exc:
+                    cli.main(["--skip-profile", *arguments])
+                self.assertEqual(exc.exception.code, 2)
+
         with self.assertRaises(SystemExit) as exc:
             cli.main(["--skip-profile", "--phone-inventory-max-devices", "0"])
 
