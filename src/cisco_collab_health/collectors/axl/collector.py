@@ -274,21 +274,53 @@ class AxlCollector:
         warnings: list[str],
         evidence: list[EvidenceRef],
     ) -> None:
-        try:
-            defaults_response = self._call_axl_response(
-                context,
-                "listDeviceDefaults",
-                list_device_defaults_body(),
-            )
-        except AxlCollectionError as exc:
-            warnings.append(f"AXL listDeviceDefaults failed: {exc}")
+        target_keys = sorted(
+            {
+                (device.model.strip(), device.protocol.strip())
+                for device in facts.devices
+                if device.model and device.model.strip() and device.protocol and device.protocol.strip()
+            }
+        )
+        if not target_keys:
             return
 
-        evidence.append(_evidence_from_soap_response(defaults_response, context.publisher_ip))
-        try:
-            facts.device_load_defaults.extend(parse_device_load_defaults(defaults_response.body))
-        except AxlCollectionError as exc:
-            warnings.append(f"AXL listDeviceDefaults failed: {exc}")
+        unresolved = set(target_keys)
+        failures = 0
+        for index, (model, protocol) in enumerate(target_keys, start=1):
+            try:
+                defaults_response = self._call_axl_response(
+                    context,
+                    "listDeviceDefaults",
+                    list_device_defaults_body(model, protocol),
+                    artifact_operation=f"listDeviceDefaults_{index:03d}",
+                )
+            except AxlCollectionError:
+                failures += 1
+                continue
+
+            evidence.append(_evidence_from_soap_response(defaults_response, context.publisher_ip))
+            try:
+                defaults = parse_device_load_defaults(defaults_response.body)
+            except AxlCollectionError:
+                failures += 1
+                continue
+            facts.device_load_defaults.extend(defaults)
+            unresolved.difference_update(
+                (default.model.strip(), (default.protocol or "").strip())
+                for default in defaults
+                if default.model and default.protocol
+            )
+            # Some CUCM releases return every default despite the exact criteria.
+            # Stop once the response set covers the inventory's model/protocol pairs.
+            if not unresolved:
+                break
+
+        if failures:
+            warnings.append(
+                "AXL listDeviceDefaults could not collect "
+                f"{failures} of {len(target_keys)} model/protocol default request(s); "
+                "review the corresponding diagnostic artifacts."
+            )
 
     def _collect_diagnostic_axl(
         self,

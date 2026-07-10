@@ -508,6 +508,11 @@ class HtmlReportBuilder:
     def _device_load_summary_rows(self, report: AssessmentReport) -> str:
         if not report.facts.devices:
             return '<tr><td colspan="7">No device inventory facts collected.</td></tr>'
+        if not report.facts.device_load_defaults:
+            return (
+                '<tr><td colspan="7">Device load defaults were unavailable; load comparison '
+                'and missing-load counts are not evaluated.</td></tr>'
+            )
 
         default_by_key = {
             _model_protocol_key(default.model, default.protocol): default.default_load
@@ -779,7 +784,8 @@ class HtmlReportBuilder:
     <section>
       <h2>Inventory / Runtime Reconciliation</h2>
       <p class="meta">Informational name-based comparison between configured inventory facts
-      and runtime registration facts. Differences are not health findings.</p>
+      and runtime registration facts. An inventory-only device was not returned by the RIS
+      query; it is not automatically unregistered or unhealthy. Differences are not health findings.</p>
       <table>
         <tbody>
           {summary_rows}
@@ -821,7 +827,7 @@ class HtmlReportBuilder:
 
     def _inventory_only_rows(self, devices: list[DeviceInventoryFact]) -> str:
         if not devices:
-            return '<tr><td colspan="6">No inventory-only devices found.</td></tr>'
+            return '<tr><td colspan="6">No configured devices absent from the RIS response.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -977,17 +983,17 @@ def _source_caption(section_name: str, report: AssessmentReport) -> str:
         "Cluster": "Source: AXL getCCMVersion and listProcessNode.",
         "Discovered Nodes": "Source: AXL listProcessNode.",
         "Device Inventory By Model": inventory_caption,
-        "Device Load Summary": "Source: AXL listPhone summary inventory and device load default facts when collected.",
+        "Device Load Summary": "Source: AXL listPhone summary inventory and AXL listDeviceDefaults facts when available.",
         "Detailed Device Inventory": detailed_inventory_caption,
     }
-    planned_sections = {
-        "Device Registration Summary": "Source: RISPort70 SelectCmDeviceExt. Real collector not implemented yet.",
-        "Detailed Device Registration": "Source: RISPort70 SelectCmDeviceExt. Real collector not implemented yet.",
-        "Services": "Source: Control Center Services. Real collector not implemented yet.",
-        "Performance Counters": "Source: PerfMon. Real collector not implemented yet.",
+    collected_sections = {
+        "Device Registration Summary": "Source: RISPort70 SelectCmDeviceExt normalized runtime records.",
+        "Detailed Device Registration": "Source: RISPort70 SelectCmDeviceExt normalized runtime records.",
+        "Services": "Source: Control Center Services normalized service records.",
+        "Performance Counters": "Source: PerfMon normalized performance-counter records.",
         "Platform Checks": "Source: SSH/CLI fallback. Real collector not implemented yet.",
     }
     if section_name in axl_sections and _has_axl_evidence(report):
         return f'<p class="meta">{escape(axl_sections[section_name])}</p>'
-    caption = planned_sections.get(section_name, "Source: Not recorded.")
+    caption = collected_sections.get(section_name, "Source: Not recorded.")
     return f'<p class="meta">{escape(caption)}</p>'

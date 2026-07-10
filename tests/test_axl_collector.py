@@ -181,6 +181,11 @@ LIST_DEVICE_DEFAULTS_RESPONSE = """<?xml version="1.0" encoding="UTF-8"?>
           <protocol>SCCP</protocol>
           <loadInformation>SCCP45.9-4-2SR4-3</loadInformation>
         </deviceDefault>
+        <deviceDefault>
+          <model>Cisco Unified Client Services Framework</model>
+          <protocol>SIP</protocol>
+          <loadInformation />
+        </deviceDefault>
       </return>
     </ns:listDeviceDefaultsResponse>
   </soapenv:Body>
@@ -321,7 +326,7 @@ class AxlCollectorTests(unittest.TestCase):
             "AXL.listPhone.summary, AXL.listDevicePool",
         )
         self.assertEqual(result.facts.devices[1].location, "Remote-Loc")
-        self.assertEqual(len(result.facts.device_load_defaults), 2)
+        self.assertEqual(len(result.facts.device_load_defaults), 3)
         self.assertEqual(result.facts.device_load_defaults[0].source, "AXL.listDeviceDefaults")
         self.assertEqual(result.status_flags, [])
 
@@ -460,7 +465,7 @@ class AxlCollectorTests(unittest.TestCase):
             result = collector.collect(context)
 
         self.assertEqual(result.facts.devices, [])
-        self.assertEqual(len(result.facts.device_load_defaults), 2)
+        self.assertEqual(result.facts.device_load_defaults, [])
 
     def test_axl_collector_ignores_enterprise_wide_data_process_node(self) -> None:
         context = CollectionContext(
@@ -558,11 +563,13 @@ class AxlCollectorTests(unittest.TestCase):
                 soap_response(LIST_PHONE_RESPONSE, "listPhone"),
                 soap_response(LIST_DEVICE_POOL_RESPONSE, "listDevicePool"),
                 soap_response("<not-xml", "listDeviceDefaults"),
+                soap_response("<not-xml", "listDeviceDefaults"),
+                soap_response("<not-xml", "listDeviceDefaults"),
             ],
         ):
             result = collector.collect(context)
 
-        self.assertIn("AXL listDeviceDefaults failed", result.warnings[0])
+        self.assertIn("AXL listDeviceDefaults could not collect", result.warnings[0])
         self.assertEqual(result.facts.device_load_defaults, [])
 
     def test_axl_phone_inventory_writes_page_specific_artifacts(self) -> None:
@@ -629,7 +636,7 @@ class AxlCollectorTests(unittest.TestCase):
             )
             self.assertTrue(
                 str(result.evidence[5].artifact_path).endswith(
-                    "listDeviceDefaults/response.txt"
+                    "listDeviceDefaults_001/response.txt"
                 )
             )
 

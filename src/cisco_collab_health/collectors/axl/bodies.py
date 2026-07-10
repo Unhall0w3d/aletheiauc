@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from xml.sax.saxutils import escape
+
 
 def get_ccm_version_body() -> str:
     return "<axl:getCCMVersion />"
@@ -38,11 +40,18 @@ def list_phone_body(*, first: int | None = None, skip: int | None = None) -> str
     </axl:listPhone>"""
 
 
-def list_device_defaults_body() -> str:
-    return """<axl:listDeviceDefaults>
+def list_device_defaults_body(model: str, protocol: str) -> str:
+    """Build a narrowly scoped device-default request.
+
+    Device model and protocol are enumerated values in CUCM.  A wildcard
+    request is accepted by some releases but rejected by CUCM 15, so callers
+    provide values observed in the phone inventory instead.
+    """
+
+    return f"""<axl:listDeviceDefaults>
       <searchCriteria>
-        <model>%</model>
-        <protocol>%</protocol>
+        <model>{escape(model)}</model>
+        <protocol>{escape(protocol)}</protocol>
       </searchCriteria>
       <returnedTags>
         <model />

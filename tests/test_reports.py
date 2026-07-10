@@ -145,6 +145,33 @@ class ReportBuilderTests(unittest.TestCase):
             payload,
         )
 
+    def test_html_report_marks_load_comparison_unavailable_without_defaults(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                devices=[
+                    DeviceInventoryFact(
+                        name="SEP000000000001",
+                        description=None,
+                        model="Cisco 8845",
+                        protocol="SIP",
+                        device_pool="Default",
+                        call_manager_group=None,
+                        location="HQ",
+                        region=None,
+                        configured_load=None,
+                        source="fixture",
+                    )
+                ]
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        payload = HtmlReportBuilder().build(report)
+
+        self.assertIn("Device load defaults were unavailable", payload)
+        self.assertNotIn("Unknown Default</th><td>1", payload)
+
     def test_html_report_summarizes_registration_categories(self) -> None:
         payload = HtmlReportBuilder().build(self.report)
 
@@ -373,6 +400,7 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("HQ-VG01", payload)
         self.assertIn("ITSP-SIP-TRUNK", payload)
         self.assertIn("Differences are not health findings.", payload)
+        self.assertIn("not automatically unregistered or unhealthy", payload)
         self.assertNotIn("inventory.runtime_reconciliation", payload)
 
     def test_axl_skipped_phone_inventory_note_marks_devices_skipped(self) -> None:

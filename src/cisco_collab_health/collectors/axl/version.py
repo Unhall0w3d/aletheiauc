@@ -45,6 +45,13 @@ class AxlVersionPolicy:
 
 
 def response_summary(response_text: str) -> str:
+    fault_match = re.search(
+        r"<faultstring>(.*?)</faultstring>|<axlmessage>(.*?)</axlmessage>",
+        response_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if fault_match:
+        return " ".join(next(value for value in fault_match.groups() if value is not None).split())
     stripped = " ".join(response_text.split())
     return stripped[:300]
 
