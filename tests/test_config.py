@@ -103,6 +103,26 @@ class ConfigTests(unittest.TestCase):
         payload = store.get_password(KEYRING_SERVICE, profile_secret_key("lab")) or ""
         self.assertIn('"os_username": "osreader"', payload)
         self.assertIn('"os_password": "os-secret"', payload)
+        self.assertIn('"platform_credentials_configured": true', payload)
+
+    def test_unmarked_profile_does_not_treat_api_credentials_as_platform_credentials(self) -> None:
+        store = FakeCredentialStore()
+        store.set_password(
+            KEYRING_SERVICE,
+            profile_secret_key("lab"),
+            '{"publisher_input":"192.0.2.10","publisher_ip":"192.0.2.10",'
+            '"gui_username":"apiadmin","gui_password":"api-secret",'
+            '"os_username":"apiadmin","os_password":"api-secret"}',
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runtime = ensure_runtime_profile(
+                "lab", config_dir=Path(tmpdir), input_func=lambda prompt: "platform-reader",
+                getpass_func=lambda prompt: "platform-secret", credential_store=store,
+            )
+
+        self.assertEqual(runtime.stored.os_username, "platform-reader")
+        self.assertEqual(runtime.os_password, "platform-secret")
 
     def test_keyring_backed_profile_registers_profile_name(self) -> None:
         store = FakeCredentialStore()

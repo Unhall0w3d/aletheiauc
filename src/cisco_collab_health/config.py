@@ -323,13 +323,13 @@ def prompt_for_profile(
     publisher_ip = resolve_publisher(publisher_input)
     gui_username = input_func("CUCM GUI/API username: ").strip()
     gui_password = getpass_func("CUCM GUI/API password: ")
-    os_username = input_func("CUCM OS/SSH username: ").strip()
-    os_password = getpass_func("CUCM OS/SSH password: ")
+    os_username = input_func("CUCM Platform/CLI username: ").strip()
+    os_password = getpass_func("CUCM Platform/CLI password: ")
 
     if not gui_username:
         raise ValueError("CUCM GUI/API username cannot be empty.")
     if not os_username:
-        raise ValueError("CUCM OS/SSH username cannot be empty.")
+        raise ValueError("CUCM Platform/CLI username cannot be empty.")
 
     return RuntimeProfile(
         stored=StoredProfile(
@@ -396,9 +396,9 @@ def ensure_runtime_profile(
 
     warnings: list[str] = []
     if not stored.os_username:
-        os_username = input_func("CUCM OS/SSH username (required for platform APIs): ").strip()
+        os_username = input_func("CUCM Platform/CLI username: ").strip()
         if not os_username:
-            raise ValueError("CUCM OS/SSH username cannot be empty.")
+            raise ValueError("CUCM Platform/CLI username cannot be empty.")
         stored = replace(stored, os_username=os_username)
         profiles[profile_name] = stored
         save_profiles(profiles, config_dir)
@@ -414,7 +414,7 @@ def ensure_runtime_profile(
         store,
         profile_name,
         "os_password",
-        f"CUCM OS/SSH password for {stored.os_username}: ",
+        f"CUCM Platform/CLI password for {stored.os_username}: ",
         getpass_func,
         warnings,
     )
@@ -469,19 +469,18 @@ def _load_runtime_profile_from_store(
         return None
 
     data = json.loads(payload)
+    platform_credentials_configured = data.get("platform_credentials_configured") is True
     os_username = str(data.get("os_username") or "").strip()
     os_password = str(data.get("os_password") or "")
     warnings = []
-    if not os_username:
+    if not platform_credentials_configured:
         os_username = input_func(
-            "CUCM OS/SSH username (required for platform APIs): "
+            "CUCM Platform/CLI username (required for certificate and CLI collection): "
         ).strip()
         if not os_username:
-            raise ValueError("CUCM OS/SSH username cannot be empty.")
-        warnings.append("OS/SSH credentials were added to the encrypted profile.")
-    if not os_password:
-        os_password = getpass_func(f"CUCM OS/SSH password for {os_username}: ")
-        warnings.append("OS/SSH credentials were added to the encrypted profile.")
+            raise ValueError("CUCM Platform/CLI username cannot be empty.")
+        os_password = getpass_func(f"CUCM Platform/CLI password for {os_username}: ")
+        warnings.append("Platform/CLI credentials were added to the encrypted profile.")
     return RuntimeProfile(
         stored=StoredProfile(
             name=profile_name,
@@ -544,6 +543,7 @@ def _store_or_warn(
         "gui_password": runtime.gui_password,
         "os_username": runtime.stored.os_username,
         "os_password": runtime.os_password,
+        "platform_credentials_configured": True,
     }
     try:
         store.set_password(
