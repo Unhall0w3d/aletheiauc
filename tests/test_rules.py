@@ -142,7 +142,7 @@ class DeviceLoadRuleTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, FindingSeverity.INFO)
         self.assertIn("SEP001122334455", findings[0].facts[0])
 
-    def test_matching_default_load_is_not_a_finding(self) -> None:
+    def test_matching_default_load_is_still_a_static_override_finding(self) -> None:
         findings = DeviceLoadRule().evaluate(
             AssessmentFacts(
                 devices=[
@@ -170,7 +170,8 @@ class DeviceLoadRuleTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(findings, [])
+        self.assertEqual(len(findings), 1)
+        self.assertIn("remains statically pinned", findings[0].facts[0])
 
 
 class SummaryRuleTests(unittest.TestCase):

@@ -72,7 +72,7 @@ Current capabilities:
 - AXL schema retry when CUCM reports that the requested AXL version is unsupported
 - Publisher preflight and interface reachability checks
 - Read-only diagnostic capture with normalized RISPort70 registration, Control Center service-status, and PerfMon counter facts
-- Runtime firmware distribution, explicit download-failure reporting, and conservative firmware findings
+- Static Phone Load override classification, configured/runtime firmware correlation, runtime firmware distribution, and explicit download-failure reporting
 - Reason-aware service summaries by node and service group
 - Zero-only CPU suppression so invalid snapshots are reported as unavailable
 - Conservative summary rules for collected inventory, runtime registration, service, configuration, and device-load facts
@@ -285,6 +285,13 @@ CUCM 15 rejected the available `listDeviceDefaults` criteria. The complete SOAP
 request and response are retained when artifact capture is enabled. If no default facts are available, the report
 marks load comparison unavailable rather than inferring missing or manual
 loads.
+
+The AXL `listPhone` `loadInformation` field is treated as the explicitly
+configured Phone Load. Every nonblank value is a static override—even when it
+currently equals the model/protocol Device Default—because it remains pinned
+across later default changes. Reports distinguish matching, differing, and
+default-unavailable overrides, summarize them by model/load, and correlate them
+with RISPort active firmware when diagnostic capture supplies runtime data.
 
 ## Diagnostic Capture Mode
 

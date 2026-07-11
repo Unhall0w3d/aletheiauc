@@ -44,6 +44,14 @@ class HtmlReportBuilder:
         device_rows = self._device_rows(report)
         device_model_rows = self._device_model_summary_rows(report)
         device_load_rows = self._device_load_summary_rows(report)
+        device_load_note = (
+            '<p class="meta">Device load defaults were unavailable; static overrides remain '
+            'identifiable, but default comparison is unavailable.</p>'
+            if report.facts.devices and not report.facts.device_load_defaults
+            else ""
+        )
+        static_load_rows = self._static_load_summary_rows(report)
+        firmware_correlation_rows = self._firmware_correlation_rows(report)
         coverage_section = self._coverage_section(report)
         registration_rows = self._registration_rows(report)
         registration_summary_rows = self._registration_summary_rows(report)
@@ -261,16 +269,23 @@ class HtmlReportBuilder:
     <section>
       <h2>Device Load Summary</h2>
       {_source_caption("Device Load Summary", report)}
+      {device_load_note}
       <table>
         <thead>
           <tr>
             <th>Model</th><th>Protocol</th><th>Default Load</th>
-            <th>Devices</th><th>Manual Loads</th><th>Missing Loads</th><th>Unknown Default</th>
+            <th>Devices</th><th>Static Overrides</th><th>Overrides Matching Default</th>
+            <th>Overrides Differing</th><th>Override Default Unknown</th><th>Inherited Default</th>
           </tr>
         </thead>
         <tbody>
           {device_load_rows}
         </tbody>
+      </table>
+      <h3>Static Overrides by Model and Load</h3>
+      <table>
+        <thead><tr><th>Model</th><th>Protocol</th><th>Static Load</th><th>Devices</th></tr></thead>
+        <tbody>{static_load_rows}</tbody>
       </table>
     </section>
     <section>
@@ -278,8 +293,13 @@ class HtmlReportBuilder:
       <p class="meta">Source: RISPort runtime firmware and download state. Unknown download
       status is reported as unknown and is not treated as a failure.</p>
       <table>
-        <thead><tr><th>Active Load</th><th>Devices</th></tr></thead>
+        <thead><tr><th>Model</th><th>Protocol</th><th>Active Load</th><th>Devices</th></tr></thead>
         <tbody>{firmware_summary_rows}</tbody>
+      </table>
+      <h3>Configured / Runtime Firmware Correlation</h3>
+      <table>
+        <thead><tr><th>State</th><th>Devices</th></tr></thead>
+        <tbody>{firmware_correlation_rows}</tbody>
       </table>
       <h3>Explicit Download Failures</h3>
       <table>
@@ -602,40 +622,58 @@ class HtmlReportBuilder:
 
     def _device_load_summary_rows(self, report: AssessmentReport) -> str:
         if not report.facts.devices:
-            return '<tr><td colspan="7">No device inventory facts collected.</td></tr>'
+            return '<tr><td colspan="9">No device inventory facts collected.</td></tr>'
         if not report.facts.device_load_defaults:
-            return (
-                '<tr><td colspan="7">Device load defaults were unavailable; load comparison '
-                'and missing-load counts are not evaluated.</td></tr>'
-            )
+            # Static overrides remain authoritative even without Device Defaults.
+            default_by_key: dict[tuple[str, str], str | None] = {}
+        else:
+            default_by_key = {
+                _model_protocol_key(default.model, default.protocol): default.default_load
+                for default in report.facts.device_load_defaults
+            }
 
-        default_by_key = {
-            _model_protocol_key(default.model, default.protocol): default.default_load
-            for default in report.facts.device_load_defaults
-        }
         rows = []
         for key, devices in _devices_by_model_protocol(report).items():
             model, protocol = key
             default_load = default_by_key.get(key)
-            manual_load_count = sum(
-                1
-                for device in devices
-                if _is_manual_load(device.configured_load, default_load)
-            )
-            missing_load_count = sum(1 for device in devices if not device.configured_load)
-            unknown_default_count = len(devices) if key not in default_by_key else 0
+            overrides = [device for device in devices if device.configured_load]
+            matching_count = sum(1 for device in overrides if _loads_equal(device.configured_load, default_load))
+            differing_count = sum(1 for device in overrides if default_load and not _loads_equal(device.configured_load, default_load))
+            unknown_count = len(overrides) if not default_load else 0
+            inherited_count = len(devices) - len(overrides)
             rows.append(
                 "<tr>"
                 f"<td>{escape(display_text(model))}</td>"
                 f"<td>{escape(display_text(protocol))}</td>"
                 f"<td>{escape(display_text(default_load))}</td>"
                 f"<td>{len(devices)}</td>"
-                f"<td>{manual_load_count}</td>"
-                f"<td>{missing_load_count}</td>"
-                f"<td>{unknown_default_count}</td>"
+                f"<td>{len(overrides)}</td><td>{matching_count}</td>"
+                f"<td>{differing_count}</td><td>{unknown_count}</td><td>{inherited_count}</td>"
                 "</tr>"
             )
         return "\n".join(rows)
+
+    def _static_load_summary_rows(self, report: AssessmentReport) -> str:
+        counts = Counter(
+            (device.model or "Unknown model", device.protocol or "Unknown", device.configured_load)
+            for device in report.facts.devices if device.configured_load
+        )
+        if not counts:
+            return '<tr><td colspan="4">No static Phone Load overrides found.</td></tr>'
+        return "\n".join(
+            f"<tr><td>{escape(model)}</td><td>{escape(protocol)}</td>"
+            f"<td>{escape(load)}</td><td>{count}</td></tr>"
+            for (model, protocol, load), count in sorted(counts.items())
+        )
+
+    def _firmware_correlation_rows(self, report: AssessmentReport) -> str:
+        counts = _firmware_correlation_counts(report)
+        if not counts:
+            return '<tr><td colspan="2">No matched configured/runtime firmware records available.</td></tr>'
+        return "\n".join(
+            f"<tr><td>{escape(state)}</td><td>{count}</td></tr>"
+            for state, count in sorted(counts.items())
+        )
 
     def _registration_rows(self, report: AssessmentReport) -> str:
         if not report.facts.registrations:
@@ -699,14 +737,19 @@ class HtmlReportBuilder:
 
     def _firmware_summary_rows(self, report: AssessmentReport) -> str:
         loads = Counter(
-            registration.active_load or "Unavailable"
+            (
+                registration.model or "Unknown model",
+                registration.protocol or "Unknown",
+                registration.active_load or "Unavailable",
+            )
             for registration in report.facts.registrations
         )
         if not loads:
-            return '<tr><td colspan="2">No runtime firmware data collected.</td></tr>'
+            return '<tr><td colspan="4">No runtime firmware data collected.</td></tr>'
         return "\n".join(
-            f"<tr><td>{escape(load)}</td><td>{count}</td></tr>"
-            for load, count in sorted(loads.items())
+            f"<tr><td>{escape(model)}</td><td>{escape(protocol)}</td>"
+            f"<td>{escape(load)}</td><td>{count}</td></tr>"
+            for (model, protocol, load), count in sorted(loads.items())
         )
 
     def _firmware_failure_rows(self, report: AssessmentReport) -> str:
@@ -1221,10 +1264,44 @@ def _model_protocol_key(model: str | None, protocol: str | None) -> tuple[str, s
     return (model or "Unknown model", protocol or "")
 
 
-def _is_manual_load(configured_load: str | None, default_load: str | None) -> bool:
-    if not configured_load or not default_load:
-        return False
-    return configured_load.strip().lower() != default_load.strip().lower()
+def _loads_equal(left: str | None, right: str | None) -> bool:
+    return bool(left and right and left.strip().lower() == right.strip().lower())
+
+
+def _firmware_correlation_counts(report: AssessmentReport) -> Counter[str]:
+    devices = {device.name.strip().lower(): device for device in report.facts.devices}
+    defaults = {
+        (
+            (default.model or "").strip().lower(),
+            (default.protocol or "").strip().lower(),
+        ): default.default_load
+        for default in report.facts.device_load_defaults
+    }
+    counts: Counter[str] = Counter()
+    for registration in report.facts.registrations:
+        device = devices.get(registration.name.strip().lower())
+        if not device:
+            continue
+        active = registration.active_load
+        override = device.configured_load
+        default = defaults.get(
+            ((device.model or "").strip().lower(), (device.protocol or "").strip().lower())
+        )
+        if not active:
+            counts["Runtime active load unavailable"] += 1
+        elif override and _loads_equal(active, override):
+            counts["Active load matches static override"] += 1
+        elif override and _loads_equal(active, default):
+            counts["Static override configured; active load matches current default"] += 1
+        elif override:
+            counts["Active load differs from static override and current default"] += 1
+        elif default and _loads_equal(active, default):
+            counts["Inherited active load matches current default"] += 1
+        elif default:
+            counts["Inherited active load differs from current default"] += 1
+        else:
+            counts["Active load present; current default unavailable"] += 1
+    return counts
 
 
 def _is_sample_report(report: AssessmentReport) -> bool:

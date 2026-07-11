@@ -147,17 +147,48 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn(
             (
                 "<tr><td>Cisco 8845</td><td>SIP</td><td>sip8845.14-2-1</td>"
-                "<td>1</td><td>0</td><td>0</td><td>0</td></tr>"
+                "<td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td></tr>"
             ),
             payload,
         )
         self.assertIn(
             (
                 "<tr><td>Cisco Unified Client Services Framework</td><td>SIP</td><td>—</td>"
-                "<td>1</td><td>0</td><td>1</td><td>0</td></tr>"
+                "<td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td></tr>"
             ),
             payload,
         )
+
+    def test_html_report_correlates_static_configured_and_runtime_loads(self) -> None:
+        facts = AssessmentFacts(
+            devices=[
+                DeviceInventoryFact(
+                    name="SEP000000000001", description=None, model="Cisco 8845",
+                    protocol="SIP", device_pool="Default", call_manager_group=None,
+                    location=None, region=None, configured_load="sip8845.pilot", source="fixture",
+                )
+            ],
+            device_load_defaults=[
+                DeviceLoadDefaultFact(
+                    model="Cisco 8845", protocol="SIP", default_load="sip8845.default",
+                    source="fixture",
+                )
+            ],
+            registrations=[
+                DeviceRegistrationFact(
+                    name="SEP000000000001", status="registered", registered_node="pub",
+                    ip_address=None, model="Cisco 8845", protocol="SIP", source="fixture",
+                    active_load="sip8845.pilot",
+                )
+            ],
+        )
+
+        payload = HtmlReportBuilder().build(
+            AssessmentReport(facts=facts, collector_results=[], findings=[])
+        )
+
+        self.assertIn("Active load matches static override</td><td>1", payload)
+        self.assertIn("sip8845.pilot</td><td>1", payload)
 
     def test_html_report_marks_load_comparison_unavailable_without_defaults(self) -> None:
         report = AssessmentReport(
