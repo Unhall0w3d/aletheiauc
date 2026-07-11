@@ -72,8 +72,8 @@ Current capabilities:
 - Inventory-only summaries by model and device pool
 - Diagnostic dial-plan relationships for route-pattern destinations, route-list/route-group membership, and CSS partitions
 - Per-node UC Certificate Management REST snapshots using OS read credentials
-- Certificate expiry, signing, and chain analysis with a 60-day warning window
-- Mandatory review coverage for `phone-sast-trust` and `phone-vpn-trust`
+- Raw per-node certificate identity/trust snapshots; live PEM normalization is the next implementation task
+- Planned 60-day expiry and mandatory `phone-sast-trust` / `phone-vpn-trust` assessment policy
 - Automatic encrypted-profile upgrade when legacy profiles lack OS/SSH credentials
 - Explicit encrypted marker prevents API credentials from being mistaken for Platform/CLI credentials
 - AXL schema retry when CUCM reports that the requested AXL version is unsupported
@@ -97,11 +97,15 @@ normalized only when `--diagnostic-capture` is enabled; they are not yet
 independent baseline collectors with full policy/threshold coverage. CLI
 platform checks remain unimplemented.
 
-Current CUCM 15 validation status: the previous diagnostic archive has been
-fully replayed against the implemented parsers. A fresh run is required to
-validate SQL-backed Device Defaults discovery and the report changes added
-after that archive. After CUCM 15 stabilizes, validation proceeds to CUCM 14.x,
-12.x, and 11.x before expanding to Cisco Unity Connection.
+Current CUCM 15 validation status: AXL inventory and Device Defaults SQL,
+RISPort registration/firmware, Control Center services, PerfMon snapshots,
+static Phone Loads, firmware findings, service-state policy, evidence export,
+and encrypted Platform credential migration are live-validated. Certificate
+Management REST authentication and raw snapshots are also validated. The next
+work is PEM/X.509 normalization, trust-store deduplication, phone trust-store
+coverage, and bounded AXL `get` enrichment for relationships omitted by list
+responses. After CUCM 15 stabilizes, validation proceeds to CUCM 14.x, 12.x,
+and 11.x before expanding to Cisco Unity Connection.
 
 AXL requests start with schema version `14.0`. If CUCM returns an
 `Incorrect axl version` response that lists supported versions, AletheiaUC
