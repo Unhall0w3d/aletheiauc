@@ -297,6 +297,11 @@ identifies mixed active-load populations by model/protocol, separates failed
 downloads that remain on the wrong load from failures already showing the
 intended load, and provides an exception table with configured, default, active,
 status, reason, and node context.
+Firmware health output separates active mismatches (warning) from persistent
+failure status where the intended load is already active (informational). Mixed
+population rows include both runtime and configured counts. Service analysis
+treats `Service Not Activated` and `Commanded Out of Service` as intentional
+context and warns only on other stopped-state reasons.
 
 ## Diagnostic Capture Mode
 

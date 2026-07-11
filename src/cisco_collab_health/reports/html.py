@@ -306,7 +306,7 @@ class HtmlReportBuilder:
       </table>
       <h3>Mixed Active Firmware Populations</h3>
       <table>
-        <thead><tr><th>Model</th><th>Protocol</th><th>Active Loads</th><th>Devices</th></tr></thead>
+        <thead><tr><th>Model</th><th>Protocol</th><th>Active Loads</th><th>Runtime</th><th>Configured</th></tr></thead>
         <tbody>{mixed_firmware_rows}</tbody>
       </table>
       <h3>Explicit Download Failures</h3>
@@ -321,7 +321,7 @@ class HtmlReportBuilder:
       </table>
       <h3>Firmware Exceptions</h3>
       <table>
-        <thead><tr><th>Device</th><th>Model</th><th>Static Load</th><th>Default Load</th>
+        <thead><tr><th>Impact</th><th>Device</th><th>Model</th><th>Static Load</th><th>Default Load</th>
         <th>Active Load</th><th>Download Status</th><th>Failure Reason</th><th>Node</th></tr></thead>
         <tbody>{firmware_exception_rows}</tbody>
       </table>
@@ -811,22 +811,27 @@ class HtmlReportBuilder:
             grouped.setdefault(key, Counter())[registration.active_load] += 1
         mixed = {key: loads for key, loads in grouped.items() if len(loads) > 1}
         if not mixed:
-            return '<tr><td colspan="4">No mixed active firmware populations found.</td></tr>'
+            return '<tr><td colspan="5">No mixed active firmware populations found.</td></tr>'
+        configured = Counter(
+            (device.model or "Unknown model", device.protocol or "Unknown")
+            for device in report.facts.devices
+        )
         return "\n".join(
             f"<tr><td>{escape(model)}</td><td>{escape(protocol)}</td>"
             f"<td>{escape('; '.join(f'{load}: {count}' for load, count in sorted(loads.items())))}</td>"
-            f"<td>{sum(loads.values())}</td></tr>"
+            f"<td>{sum(loads.values())}</td><td>{configured[(model, protocol)]}</td></tr>"
             for (model, protocol), loads in sorted(mixed.items())
         )
 
     def _firmware_exception_rows(self, report: AssessmentReport) -> str:
         exceptions = _firmware_exceptions(report)
         if not exceptions:
-            return '<tr><td colspan="8">No firmware exceptions found.</td></tr>'
+            return '<tr><td colspan="9">No firmware exceptions found.</td></tr>'
         rows = []
         for registration, device, default_load in exceptions:
             rows.append(
                 "<tr>"
+                f"<td>{escape(_firmware_exception_impact(registration, device, default_load))}</td>"
                 f"<td>{escape(self._identifier(registration.name, 'Device'))}</td>"
                 f"<td>{escape(display_text(registration.model or device.model))}</td>"
                 f"<td>{escape(display_text(device.configured_load))}</td>"
@@ -1435,6 +1440,17 @@ def _firmware_exceptions(
         if failed or (registration.active_load and intended and not _loads_equal(registration.active_load, intended)):
             exceptions.append((registration, device, default))
     return exceptions
+
+
+def _firmware_exception_impact(
+    registration: DeviceRegistrationFact,
+    device: DeviceInventoryFact,
+    default_load: str | None,
+) -> str:
+    intended = device.configured_load or default_load
+    if _loads_equal(registration.active_load, intended):
+        return "Failure status; intended load active"
+    return "Failed transition; intended load not active"
 
 
 def _is_sample_report(report: AssessmentReport) -> bool:

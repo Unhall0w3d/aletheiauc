@@ -230,6 +230,7 @@ class ReportBuilderTests(unittest.TestCase):
 
         self.assertIn("Download failed; active load differs from intended load</td><td>1", payload)
         self.assertIn("No Tftp server set", payload)
+        self.assertIn("Failed transition; intended load not active", payload)
         self.assertNotIn("<td>CTI Port</td><td>SCCP</td><td>Unavailable</td>", payload)
 
     def test_html_report_marks_load_comparison_unavailable_without_defaults(self) -> None:

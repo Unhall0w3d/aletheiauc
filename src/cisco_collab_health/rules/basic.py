@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from cisco_collab_health.models.evidence import EvidenceRef
-from cisco_collab_health.models.facts import AssessmentFacts
+from cisco_collab_health.models.facts import AssessmentFacts, DeviceRegistrationFact
 from cisco_collab_health.models.findings import (
     FindingSeverity,
     HealthFinding,
@@ -242,40 +242,73 @@ class FirmwareDownloadRule:
         ]
         if not failures:
             return []
-        reason_counts = Counter(
-            registration.download_failure_reason or "Reason unavailable"
-            for registration in failures
-        )
-        return [
-            HealthFinding(
-                rule_id=self.rule_id,
-                title="One or more devices report firmware download failures",
-                severity=FindingSeverity.WARNING,
-                recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
-                facts=[
-                    f"Devices reporting failed downloads: {len(failures)}",
-                    *[
-                        f"{reason}: {count}"
-                        for reason, count in sorted(reason_counts.items())
-                    ],
-                ],
-                reasoning=(
-                    "RISPort reported an explicit failed firmware download state. "
-                    "This is stronger evidence than an inferred load mismatch."
-                ),
-                recommendation=(
-                    "Review TFTP availability, device configuration, firmware files, and the "
-                    "captured per-device download failure reasons."
-                ),
-                evidence=[
-                    EvidenceRef(
-                        source="RISPort70",
-                        operation="selectCmDeviceExt",
-                        confidence="high",
-                    )
-                ],
+        devices = {device.name.strip().lower(): device for device in facts.devices}
+        defaults = {
+            _model_protocol_key(item.model, item.protocol): item.default_load
+            for item in facts.device_load_defaults
+        }
+        impacted = []
+        status_only = []
+        for registration in failures:
+            device = devices.get(registration.name.strip().lower())
+            default = defaults.get(_model_protocol_key(registration.model, registration.protocol))
+            intended = (device.configured_load if device else None) or default
+            if intended and _loads_equal(registration.active_load, intended):
+                status_only.append(registration)
+            else:
+                impacted.append(registration)
+
+        findings = []
+        if impacted:
+            findings.append(
+                _firmware_download_finding(
+                    registrations=impacted,
+                    rule_id=f"{self.rule_id}.active_mismatch",
+                    title="Firmware downloads failed and devices are not running the intended load",
+                    severity=FindingSeverity.WARNING,
+                    reasoning=(
+                        "RISPort reports a failed download and the active firmware does not match "
+                        "the configured static override or current Device Default."
+                    ),
+                )
             )
-        ]
+        if status_only:
+            findings.append(
+                _firmware_download_finding(
+                    registrations=status_only,
+                    rule_id=f"{self.rule_id}.status_only",
+                    title="Firmware failure status persists while active loads match",
+                    severity=FindingSeverity.INFO,
+                    reasoning=(
+                        "RISPort reports a failed download, but the active firmware already matches "
+                        "the intended load. The status may reflect a persistent or historical failure."
+                    ),
+                )
+            )
+        return findings
+
+
+def _firmware_download_finding(
+    *, registrations: list[DeviceRegistrationFact], rule_id: str, title: str,
+    severity: FindingSeverity, reasoning: str,
+) -> HealthFinding:
+    reasons = Counter(item.download_failure_reason or "Reason unavailable" for item in registrations)
+    return HealthFinding(
+        rule_id=rule_id,
+        title=title,
+        severity=severity,
+        recommendation_kind=(
+            RecommendationKind.ENGINEERING_RECOMMENDATION
+            if severity == FindingSeverity.WARNING else RecommendationKind.INFORMATIONAL
+        ),
+        facts=[f"Devices: {len(registrations)}", *[f"{reason}: {count}" for reason, count in sorted(reasons.items())]],
+        reasoning=reasoning,
+        recommendation=(
+            "Review TFTP availability, firmware files, device configuration, and the detailed "
+            "firmware exception table."
+        ),
+        evidence=[EvidenceRef(source="RISPort70", operation="selectCmDeviceExt", confidence="high")],
+    )
 
 
 def _model_protocol_key(model: str | None, protocol: str | None) -> tuple[str, str]:
@@ -375,6 +408,46 @@ class ServiceSummaryRule:
                     f"Non-started services: {non_started}",
                 ],
                 operation="service_summary",
+            )
+        ]
+
+
+class ServiceRuntimeRule:
+    """Flags stopped services whose reason is not a known intentional state."""
+
+    rule_id = "cucm.service_runtime"
+    intentional_reasons = {"service not activated", "commanded out of service"}
+
+    def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
+        unexpected = [
+            service for service in facts.services
+            if service.status.strip().lower() != "started"
+            and (service.reason or "").strip().lower() not in self.intentional_reasons
+        ]
+        if not unexpected:
+            return []
+        by_reason = Counter(service.reason or "Reason unavailable" for service in unexpected)
+        by_node = Counter(service.node for service in unexpected)
+        return [
+            HealthFinding(
+                rule_id=self.rule_id,
+                title="One or more stopped services require review",
+                severity=FindingSeverity.WARNING,
+                recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+                facts=[
+                    f"Unexpected stopped services: {len(unexpected)}",
+                    *[f"Reason {reason}: {count}" for reason, count in sorted(by_reason.items())],
+                    *[f"Node {node}: {count}" for node, count in sorted(by_node.items())],
+                ],
+                reasoning=(
+                    "Stopped services explicitly marked not activated or commanded out of service "
+                    "are treated as intentional. Other stopped states may indicate service failure."
+                ),
+                recommendation=(
+                    "Review the affected services in Control Center and confirm whether each state "
+                    "is expected for the node role and deployment design."
+                ),
+                evidence=[EvidenceRef(source="ControlCenter", operation="soapGetServiceStatus", confidence="high")],
             )
         ]
 

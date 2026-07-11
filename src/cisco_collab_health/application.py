@@ -36,6 +36,7 @@ from cisco_collab_health.rules.basic import (
     PlatformCheckSummaryRule,
     RegistrationSummaryRule,
     ServiceSummaryRule,
+    ServiceRuntimeRule,
 )
 from cisco_collab_health.status import StatusPrinter
 from cisco_collab_health.transport.tls import TlsPolicy
@@ -162,6 +163,7 @@ def run_assessment(
             DeviceInventorySummaryRule(),
             RegistrationSummaryRule(),
             ServiceSummaryRule(),
+            ServiceRuntimeRule(),
             PlatformCheckSummaryRule(),
             DeviceLoadSummaryRule(),
             FirmwareDownloadRule(),

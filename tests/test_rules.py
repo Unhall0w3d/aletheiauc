@@ -25,6 +25,7 @@ from cisco_collab_health.rules.basic import (
     PlatformCheckSummaryRule,
     RegistrationSummaryRule,
     ServiceSummaryRule,
+    ServiceRuntimeRule,
 )
 
 
@@ -51,6 +52,57 @@ class FirmwareDownloadRuleTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
         self.assertIn("File Not Found: 1", findings[0].facts)
+
+    def test_download_failure_with_intended_active_load_is_informational(self) -> None:
+        facts = AssessmentFacts(
+            devices=[DeviceInventoryFact(
+                name="SEP001", description=None, model="Cisco 8841", protocol="SIP",
+                device_pool=None, call_manager_group=None, location=None, region=None,
+                configured_load=None, source="fixture",
+            )],
+            device_load_defaults=[DeviceLoadDefaultFact(
+                model="Cisco 8841", protocol="SIP", default_load="sip88.current", source="fixture",
+            )],
+            registrations=[DeviceRegistrationFact(
+                name="SEP001", status="Registered", registered_node="sub-1", ip_address=None,
+                model="Cisco 8841", protocol="SIP", source="fixture", active_load="sip88.current",
+                download_status="Failed", download_failure_reason="File Not Found",
+            )],
+        )
+
+        findings = FirmwareDownloadRule().evaluate(facts)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, FindingSeverity.INFO)
+        self.assertTrue(findings[0].rule_id.endswith("status_only"))
+
+
+class ServiceRuntimeRuleTests(unittest.TestCase):
+    def test_intentional_stopped_service_reasons_do_not_create_findings(self) -> None:
+        facts = AssessmentFacts(services=[
+            ServiceStatusFact(
+                node="sub-1", service_name="Cisco DRF Master", activated=None,
+                status="Stopped", uptime_seconds=None, source="fixture",
+                reason="Commanded Out of Service",
+            ),
+            ServiceStatusFact(
+                node="sub-1", service_name="Cisco WebDialer", activated=None,
+                status="Stopped", uptime_seconds=None, source="fixture",
+                reason="Service Not Activated",
+            ),
+        ])
+
+        self.assertEqual(ServiceRuntimeRule().evaluate(facts), [])
+
+    def test_unexpected_stopped_service_is_warning(self) -> None:
+        facts = AssessmentFacts(services=[ServiceStatusFact(
+            node="sub-1", service_name="Cisco CallManager", activated=None,
+            status="Stopped", uptime_seconds=None, source="fixture", reason="Service failed",
+        )])
+
+        findings = ServiceRuntimeRule().evaluate(facts)
+
+        self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
 
 
 class NodeReachabilityRuleTests(unittest.TestCase):
