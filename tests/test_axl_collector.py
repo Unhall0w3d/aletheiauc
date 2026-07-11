@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from cisco_collab_health.artifacts import ArtifactStore
 from cisco_collab_health.collectors.axl import AxlCollector, AxlVersionPolicy
+from cisco_collab_health.collectors.axl.bodies import diagnostic_list_body
 from cisco_collab_health.collectors.axl_errors import AxlCollectionError, AxlVersionError
 from cisco_collab_health.collectors.axl_bodies import (
     DEVICE_DEFAULTS_SQL,
@@ -254,6 +255,27 @@ class AxlCollectorTests(unittest.TestCase):
         self.assertEqual(facts[0].object_type, "RoutePattern")
         self.assertEqual(facts[0].name, "9.!#")
         self.assertEqual(facts[0].details["partition"], "PT-PSTN")
+
+    def test_diagnostic_axl_parser_normalizes_nested_memberships(self) -> None:
+        response = """<Envelope><return><routeList><name>PSTN-RL</name><members>
+        <member><routeGroupName>PRIMARY-RG</routeGroupName></member>
+        <member><routeGroupName>BACKUP-RG</routeGroupName></member>
+        </members></routeList></return></Envelope>"""
+
+        facts = parse_configuration_objects(
+            response, "listRouteList", ("name", "members/member/routeGroupName")
+        )
+
+        self.assertEqual(facts[0].details["route_groups"], "PRIMARY-RG, BACKUP-RG")
+
+    def test_diagnostic_axl_body_builds_nested_returned_tags(self) -> None:
+        body = diagnostic_list_body(
+            "listCss", criteria_tag="name",
+            returned_tags=("name", "members/member/routePartitionName"),
+            first=100, skip=0,
+        )
+
+        self.assertIn("<members><member><routePartitionName /></member></members>", body)
 
     def test_axl_version_policy_prefers_discovered_supported_version(self) -> None:
         policy = AxlVersionPolicy()

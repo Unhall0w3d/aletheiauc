@@ -69,6 +69,10 @@ class HtmlReportBuilder:
         perf_summary_rows = self._perf_summary_rows(report)
         cpu_note = self._cpu_availability_note(report)
         configuration_summary_rows = self._configuration_summary_rows(report)
+        route_pattern_rows = self._route_pattern_relationship_rows(report)
+        route_list_rows = self._route_list_relationship_rows(report)
+        css_coverage_rows = self._css_partition_coverage_rows(report)
+        service_deployment_rows = self._service_deployment_rows(report)
         configuration_rows = self._configuration_rows(report)
         platform_check_rows = self._platform_check_rows(report)
         collector_issues_section = self._collector_issues_section(report)
@@ -130,6 +134,7 @@ class HtmlReportBuilder:
       border: 1px solid var(--line);
       border-radius: 12px;
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+      overflow-x: auto;
     }}
     h2 {{
       margin: 0 0 16px;
@@ -158,6 +163,14 @@ class HtmlReportBuilder:
     table {{
       width: 100%;
       border-collapse: collapse;
+    }}
+    .table-scroll {{
+      width: 100%;
+      overflow-x: auto;
+      margin-bottom: 14px;
+    }}
+    .table-scroll table {{
+      min-width: 760px;
     }}
     details > summary {{
       cursor: pointer;
@@ -343,6 +356,14 @@ class HtmlReportBuilder:
         <thead><tr><th>Group</th><th>Started</th><th>Stopped</th><th>Total</th></tr></thead>
         <tbody>{service_group_summary_rows}</tbody>
       </table>
+      <h3>Service Deployment Comparison</h3>
+      <p class="meta">Observed deployment only; differences are not evaluated against an assumed node-role policy.</p>
+      <details><summary>Show service deployment by node</summary>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Service</th><th>Group</th><th>Started Nodes</th><th>Stopped Nodes</th></tr></thead>
+        <tbody>{service_deployment_rows}</tbody>
+      </table></div>
+      </details>
       <details>
         <summary>Show all service records</summary>
       <table>
@@ -390,6 +411,27 @@ class HtmlReportBuilder:
         <thead><tr><th>Object Type</th><th>Count</th></tr></thead>
         <tbody>{configuration_summary_rows}</tbody>
       </table>
+      <h3>Route Pattern Destinations</h3>
+      <details><summary>Show route pattern relationships</summary>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Pattern</th><th>Partition</th><th>Gateway or Route List</th></tr></thead>
+        <tbody>{route_pattern_rows}</tbody>
+      </table></div>
+      </details>
+      <h3>Route List / Route Group Membership</h3>
+      <details><summary>Show route list relationships</summary>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Route List</th><th>Route Groups</th></tr></thead>
+        <tbody>{route_list_rows}</tbody>
+      </table></div>
+      </details>
+      <h3>CSS / Partition Coverage</h3>
+      <details><summary>Show CSS membership coverage</summary>
+      <div class="table-scroll"><table>
+        <thead><tr><th>CSS</th><th>Partitions</th><th>Count</th></tr></thead>
+        <tbody>{css_coverage_rows}</tbody>
+      </table></div>
+      </details>
       <details>
         <summary>Show captured configuration objects</summary>
         <table>
@@ -970,6 +1012,62 @@ class HtmlReportBuilder:
             for object_type, count in sorted(counts.items())
         )
 
+    def _route_pattern_relationship_rows(self, report: AssessmentReport) -> str:
+        if self.customer_safe:
+            return '<tr><td colspan="3">Dial-plan names omitted from customer-safe report.</td></tr>'
+        patterns = [item for item in report.facts.configuration_objects if item.object_type == "RoutePattern"]
+        if not patterns:
+            return '<tr><td colspan="3">No route patterns collected.</td></tr>'
+        return "\n".join(
+            f"<tr><td>{escape(item.name)}</td><td>{escape(display_text(item.details.get('partition')))}</td>"
+            f"<td>{escape(display_text(item.details.get('destination'), empty='Relationship unavailable'))}</td></tr>"
+            for item in sorted(patterns, key=lambda item: (item.name, item.details.get("partition", "")))
+        )
+
+    def _route_list_relationship_rows(self, report: AssessmentReport) -> str:
+        if self.customer_safe:
+            return '<tr><td colspan="2">Route-list names omitted from customer-safe report.</td></tr>'
+        route_lists = [item for item in report.facts.configuration_objects if item.object_type == "RouteList"]
+        if not route_lists:
+            return '<tr><td colspan="2">No route lists collected.</td></tr>'
+        return "\n".join(
+            f"<tr><td>{escape(item.name)}</td>"
+            f"<td>{escape(display_text(item.details.get('route_groups'), empty='Relationship unavailable'))}</td></tr>"
+            for item in sorted(route_lists, key=lambda item: item.name)
+        )
+
+    def _css_partition_coverage_rows(self, report: AssessmentReport) -> str:
+        if self.customer_safe:
+            return '<tr><td colspan="3">CSS and partition names omitted from customer-safe report.</td></tr>'
+        css_items = [item for item in report.facts.configuration_objects if item.object_type == "Css"]
+        if not css_items:
+            return '<tr><td colspan="3">No calling search spaces collected.</td></tr>'
+        rows = []
+        for item in sorted(css_items, key=lambda item: item.name):
+            partitions = item.details.get("partitions")
+            count = len([value for value in (partitions or "").split(",") if value.strip()]) if partitions else 0
+            rows.append(
+                f"<tr><td>{escape(item.name)}</td>"
+                f"<td>{escape(display_text(partitions, empty='Membership unavailable'))}</td>"
+                f"<td>{count if partitions else '—'}</td></tr>"
+            )
+        return "\n".join(rows)
+
+    def _service_deployment_rows(self, report: AssessmentReport) -> str:
+        grouped: dict[tuple[str, str], dict[str, list[str]]] = {}
+        for service in report.facts.services:
+            key = (service.service_name, service.group_name or "Unclassified")
+            state = "started" if service.status.strip().lower() == "started" else "stopped"
+            grouped.setdefault(key, {"started": [], "stopped": []})[state].append(service.node)
+        if not grouped:
+            return '<tr><td colspan="4">No service deployment facts collected.</td></tr>'
+        return "\n".join(
+            f"<tr><td>{escape(name)}</td><td>{escape(group)}</td>"
+            f"<td>{escape(', '.join(self._identifier(node, 'Node') for node in sorted(set(nodes['started']))) or '—')}</td>"
+            f"<td>{escape(', '.join(self._identifier(node, 'Node') for node in sorted(set(nodes['stopped']))) or '—')}</td></tr>"
+            for (name, group), nodes in sorted(grouped.items())
+        )
+
     def _configuration_rows(self, report: AssessmentReport) -> str:
         if not report.facts.configuration_objects:
             return '<tr><td colspan="4">No normalized configuration objects collected.</td></tr>'
@@ -1151,6 +1249,12 @@ class HtmlReportBuilder:
             )
         )
         inventory_only_rows = self._inventory_only_rows(reconciliation.registration_capable_or_unclassified)
+        inventory_model_rows = self._inventory_only_summary_rows(
+            reconciliation.registration_capable_or_unclassified, "model"
+        )
+        inventory_pool_rows = self._inventory_only_summary_rows(
+            reconciliation.registration_capable_or_unclassified, "device_pool"
+        )
         non_runtime_rows = self._inventory_only_rows(reconciliation.known_non_runtime)
         runtime_only_rows = self._runtime_only_rows(reconciliation.runtime_only)
 
@@ -1174,6 +1278,14 @@ class HtmlReportBuilder:
         </tbody>
       </table>
       <h3>Inventory-only Registration-capable or Unclassified Devices</h3>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Model</th><th>Devices</th></tr></thead>
+        <tbody>{inventory_model_rows}</tbody>
+      </table></div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Device Pool</th><th>Devices</th></tr></thead>
+        <tbody>{inventory_pool_rows}</tbody>
+      </table></div>
       <table>
         <thead><tr><th>Name</th><th>Model</th><th>Protocol</th><th>Device Pool</th><th>Location</th><th>Source</th></tr></thead>
         <tbody>
@@ -1224,6 +1336,19 @@ class HtmlReportBuilder:
                 "</tr>"
             )
             for device in devices
+        )
+
+    def _inventory_only_summary_rows(
+        self, devices: list[DeviceInventoryFact], attribute: str
+    ) -> str:
+        if self.customer_safe and attribute == "device_pool":
+            return '<tr><td colspan="2">Device-pool names omitted from customer-safe report.</td></tr>'
+        counts = Counter(getattr(device, attribute) or "Unavailable" for device in devices)
+        if not counts:
+            return '<tr><td colspan="2">No inventory-only devices found.</td></tr>'
+        return "\n".join(
+            f"<tr><td>{escape(name)}</td><td>{count}</td></tr>"
+            for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         )
 
     def _finding_section(self, finding: HealthFinding) -> str:

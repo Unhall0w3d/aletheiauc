@@ -79,7 +79,7 @@ def diagnostic_list_body(
 ) -> str:
     """Build one bounded AXL list request from a trusted operation specification."""
 
-    tags = "\n".join(f"        <{tag} />" for tag in returned_tags)
+    tags = "\n".join(f"        {_nested_return_tag(tag)}" for tag in returned_tags)
     return f"""<axl:{operation} first="{first}" skip="{skip}">
       <searchCriteria>
         <{criteria_tag}>%</{criteria_tag}>
@@ -88,6 +88,14 @@ def diagnostic_list_body(
 {tags}
       </returnedTags>
     </axl:{operation}>"""
+
+
+def _nested_return_tag(path: str) -> str:
+    parts = path.split("/")
+    rendered = f"<{parts[-1]} />"
+    for part in reversed(parts[:-1]):
+        rendered = f"<{part}>{rendered}</{part}>"
+    return rendered
 
 
 def _paging_attributes(*, first: int | None, skip: int | None) -> str:

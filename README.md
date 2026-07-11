@@ -69,11 +69,14 @@ Current capabilities:
 - Core pipeline contracts
 - AXL collector for `getCCMVersion`, `listProcessNode`, opt-in summary `listPhone`, and `listDevicePool` inventory enrichment
 - Bounded `executeSQLQuery` collection of configured-model Device Defaults and firmware facts
+- Inventory-only summaries by model and device pool
+- Diagnostic dial-plan relationships for route-pattern destinations, route-list/route-group membership, and CSS partitions
 - AXL schema retry when CUCM reports that the requested AXL version is unsupported
 - Publisher preflight and interface reachability checks
 - Read-only diagnostic capture with normalized RISPort70 registration, Control Center service-status, and PerfMon counter facts
 - Static Phone Load override classification, configured/runtime firmware correlation, runtime firmware distribution, and explicit download-failure reporting
 - Reason-aware service summaries by node and service group
+- Observed service deployment comparison across nodes without assumed role policy
 - Zero-only CPU suppression so invalid snapshots are reported as unavailable
 - Conservative summary rules for collected inventory, runtime registration, service, configuration, and device-load facts
 - Terminal Executive Summary output
@@ -81,6 +84,7 @@ Current capabilities:
 - JSON output for development and automation
 - Raw evidence capture, normalized artifacts, and per-attempt API accounting
 - Collapsible detail tables and an identifier-masked customer-safe HTML mode
+- Responsive horizontal overflow handling for wide report tables
 
 The current production-oriented API implementation is AXL plus the bounded
 diagnostic capture path. RISPort70, Control Center, and PerfMon facts are

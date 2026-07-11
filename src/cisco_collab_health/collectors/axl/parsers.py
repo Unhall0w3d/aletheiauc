@@ -36,6 +36,9 @@ class XmlElement(Protocol):
     def iter(self) -> Iterator["XmlElement"]:
         """Iterate over this element and its descendants."""
 
+    def __iter__(self) -> Iterator["XmlElement"]:
+        """Iterate over direct children."""
+
 
 def parse_process_nodes(response_text: str, publisher_ip: str | None) -> list[CollaborationNode]:
     try:
@@ -147,7 +150,10 @@ def parse_configuration_objects(
     element_name = object_name[:1].lower() + object_name[1:]
     facts = []
     for element in _iter_local_name(root, element_name):
-        values = {tag: _child_text(element, tag) for tag in returned_tags}
+        values = {
+            tag: ", ".join(_descendant_path_texts(element, tag))
+            for tag in returned_tags
+        }
         name = values.get("name") or values.get("pattern")
         if not name:
             continue
@@ -174,8 +180,24 @@ def _configuration_detail_name(tag: str) -> str:
         "locationName": "location",
         "sipProfileName": "sip_profile",
         "distributionAlgorithm": "distribution_algorithm",
+        "gatewayOrRouteListName": "destination",
+        "members/member/routePartitionName": "partitions",
+        "members/member/routeGroupName": "route_groups",
+        "members/member/deviceName": "devices",
     }
     return labels.get(tag, tag)
+
+
+def _descendant_path_texts(element: XmlElement, path: str) -> list[str]:
+    current = [element]
+    for part in path.split("/"):
+        current = [
+            child
+            for parent in current
+            for child in list(parent)
+            if child.tag.rsplit("}", 1)[-1] == part
+        ]
+    return [text for item in current if (text := (item.text or "").strip())]
 
 
 def parse_device_pools(response_text: str) -> list[DevicePoolRecord]:
