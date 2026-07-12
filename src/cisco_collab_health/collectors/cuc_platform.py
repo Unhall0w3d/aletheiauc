@@ -14,6 +14,7 @@ CUC_SAFE_CLI_COMMANDS = (
     "show status",
     "show version",
     "show network",
+    "show network eth0 detail",
     "show memory",
     "show hardware",
     "utils service list",
