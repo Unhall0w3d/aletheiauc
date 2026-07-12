@@ -207,6 +207,37 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertNotIn("Beacon Horizon", payload)
         self.assertNotIn("https://", payload)
 
+    def test_customer_safe_report_uses_neutral_scope_and_evidence_labels(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                nodes=[
+                    CollaborationNode("cuc-pub", "192.0.2.20", "publisher", technology="cuc"),
+                    CollaborationNode("cuc-sub", "192.0.2.21", "subscriber", technology="cuc"),
+                    CollaborationNode("cucm-pub", "192.0.2.10", "publisher", technology="cucm"),
+                ]
+            ),
+            collector_results=self.report.collector_results,
+            findings=self.report.findings,
+            runtime_metadata={
+                "targets": [
+                    {"target_id": "Yorktown-Voice", "technology": "cuc", "address": "192.0.2.20"},
+                    {"target_id": "Yorktown-Call-Control", "technology": "cucm", "address": "192.0.2.10"},
+                ]
+            },
+        )
+
+        payload = HtmlReportBuilder(customer_safe=True).build(report)
+
+        self.assertIn("CUC Target 1", payload)
+        self.assertIn("CUCM Target 1", payload)
+        self.assertIn("CUC Publisher", payload)
+        self.assertIn("CUCM Publisher", payload)
+        self.assertIn("Collection Evidence", payload)
+        self.assertIn("CUCM configuration discovery; Unity Connection cluster status", payload)
+        self.assertNotIn("Yorktown-Voice", payload)
+        self.assertNotIn("Yorktown-Call-Control", payload)
+        self.assertNotIn("Collector Evidence", payload)
+
     def test_aletheiauc_header_shows_diagnostic_state(self) -> None:
         report = AssessmentReport(
             facts=self.report.facts,

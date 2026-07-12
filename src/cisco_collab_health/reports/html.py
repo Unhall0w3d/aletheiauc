@@ -175,6 +175,8 @@ class HtmlReportBuilder:
         finding_sections = "\n".join(self._finding_section(finding) for finding in report.findings)
         if not finding_sections:
             finding_sections = "<p>No findings generated.</p>"
+        findings_section = f"<section class=\"findings-section\"><h2>Priority Findings</h2>{finding_sections}</section>"
+        certificate_summary = self._certificate_summary(report)
 
         return f"""<!doctype html>
 <html lang="en">
@@ -536,21 +538,22 @@ class HtmlReportBuilder:
           <span>Registrations</span></div>
         <div class="metric-card"><strong>{len(report.facts.services)}</strong><span>Services</span></div>
         <div class="metric-card"><strong>{len(report.facts.perf_counters)}</strong>
-          <span>Perf Counters</span></div>
+          <span>Performance Samples</span></div>
         <div class="metric-card"><strong>{len(report.facts.platform_checks)}</strong>
-          <span>Platform Checks</span></div>
+          <span>Health Checks Captured</span></div>
         <div class="metric-card critical"><strong>{severity_counts[FindingSeverity.CRITICAL]}</strong>
           <span>Critical</span></div>
         <div class="metric-card warning"><strong>{severity_counts[FindingSeverity.WARNING]}</strong>
           <span>Warnings</span></div>
         <div class="metric-card info"><strong>{severity_counts[FindingSeverity.INFO]}</strong>
-          <span>Informational</span></div>
-        <div class="metric-card"><strong>{collector_note_count}</strong><span>Collector Notes</span></div>
-        <div class="metric-card"><strong>{collector_issue_count}</strong><span>Collector Issues</span></div>
-        <div class="metric-card"><strong>{collector_evidence_count}</strong><span>API Evidence</span></div>
+          <span>Observations</span></div>
+        <div class="metric-card"><strong>{collector_note_count}</strong><span>Collection Notes</span></div>
+        <div class="metric-card"><strong>{collector_issue_count}</strong><span>Collection Issues</span></div>
+        <div class="metric-card"><strong>{collector_evidence_count}</strong><span>Evidence References</span></div>
       </div></div>
     </section>
     {brand_feature_panel}
+    {findings_section}
     {methodology_scope_section}
     {target_scope_section}
     {cuc_inventory_section}
@@ -559,7 +562,7 @@ class HtmlReportBuilder:
     {cluster_section}
     <section>
       <h2>Discovered Nodes</h2>
-      {_source_caption("Discovered Nodes", report)}
+      {self._node_source_caption(report)}
       <table>
         <thead><tr><th>Technology</th><th>Name</th><th>Address</th><th>Role</th><th>Reachable</th></tr></thead>
         <tbody>
@@ -757,6 +760,7 @@ class HtmlReportBuilder:
       <h2>Certificate Validity and Trust</h2>
       <p class="meta">Source: per-node UC Certificate Management REST snapshots. Detail is limited to expired,
       and 60-day expiry-window certificates. Optional trust stores are evaluated when present.</p>
+      {certificate_summary}
       <div class="table-scroll"><table>
         <thead><tr><th>Node</th><th>Certificate</th><th>Service/Store</th><th>Kind</th>
         <th>Expires</th><th>Days</th><th>Signing</th><th>Intermediate</th><th>Root</th><th>Chain</th></tr></thead>
@@ -777,10 +781,6 @@ class HtmlReportBuilder:
     {collector_notes_section}
     {collector_evidence_section}
     {reconciliation_section}
-    <section>
-      <h2>Findings</h2>
-      {finding_sections}
-    </section>
     <section>
       <h2>Detailed Device Inventory</h2>
       {_source_caption("Detailed Device Inventory", report)}
@@ -1150,7 +1150,9 @@ class HtmlReportBuilder:
         return unique
 
     def _methodology_scope_section(self, report: AssessmentReport) -> str:
-        collector_names = ", ".join(result.collector_name for result in report.collector_results)
+        collector_names = ", ".join(
+            self._collector_label(result.collector_name) for result in report.collector_results
+        )
         if not collector_names:
             collector_names = display_text(None)
         collector_note_count = sum(len(result.notes) for result in report.collector_results)
@@ -1266,9 +1268,50 @@ class HtmlReportBuilder:
     </section>
 """
 
+    @staticmethod
+    def _node_source_caption(report: AssessmentReport) -> str:
+        technologies = {node.technology for node in report.facts.nodes}
+        sources = []
+        if "cucm" in technologies:
+            sources.append("CUCM configuration discovery")
+        if "cuc" in technologies:
+            sources.append("Unity Connection cluster status")
+        if not sources:
+            return '<p class="meta">Source: normalized assessment data.</p>'
+        return f'<p class="meta">Source: {escape("; ".join(sources))}.</p>'
+
     def _node_rows(self, report: AssessmentReport) -> str:
         if not report.facts.nodes:
             return '<tr><td colspan="5">No nodes discovered.</td></tr>'
+
+        nodes = sorted(
+            report.facts.nodes,
+            key=lambda item: (
+                item.technology or "",
+                item.role.strip().lower() != "publisher",
+                item.name.lower(),
+                item.address.lower(),
+            ),
+        )
+        if self.customer_safe:
+            role_counts: Counter[tuple[str, str]] = Counter()
+            rows = []
+            for node in nodes:
+                technology = display_text(node.technology, empty="Single cluster").upper()
+                role = node.role.strip().lower() or "member"
+                role_counts[(technology, role)] += 1
+                ordinal = role_counts[(technology, role)]
+                label = f"{technology} {role.title()}"
+                if role != "publisher":
+                    label = f"{label} {ordinal}"
+                rows.append(
+                    "<tr>"
+                    f"<td>{escape(technology)}</td><td>{escape(label)}</td>"
+                    "<td>Omitted</td>"
+                    f"<td>{escape(role)}</td><td>{escape(display_bool(node.reachable))}</td>"
+                    "</tr>"
+                )
+            return "\n".join(rows)
 
         return "\n".join(
             (
@@ -1280,15 +1323,7 @@ class HtmlReportBuilder:
                 f"<td>{escape(display_bool(node.reachable))}</td>"
                 "</tr>"
             )
-            for node in sorted(
-                report.facts.nodes,
-                key=lambda item: (
-                    item.technology or "",
-                    item.role.strip().lower() != "publisher",
-                    item.name.lower(),
-                    item.address.lower(),
-                ),
-            )
+            for node in nodes
         )
 
     def _device_rows(self, report: AssessmentReport) -> str:
@@ -1680,17 +1715,20 @@ class HtmlReportBuilder:
         if not isinstance(targets, list) or not targets:
             return ""
         rows = []
+        technology_counts: Counter[str] = Counter()
         for target in targets:
             if not isinstance(target, dict):
                 continue
+            technology = display_text(target.get("technology")).upper()
+            technology_counts[technology] += 1
             address = "Omitted" if self.customer_safe else display_text(target.get("address"))
             profile = (
                 "Omitted" if self.customer_safe else display_text(target.get("connection_profile"))
             )
             rows.append(
                 "<tr>"
-                f"<td>{escape(display_text(target.get('target_id')))}</td>"
-                f"<td>{escape(display_text(target.get('technology')).upper())}</td>"
+                f"<td>{escape(f'{technology} Target {technology_counts[technology]}' if self.customer_safe else display_text(target.get('target_id')))}</td>"
+                f"<td>{escape(technology)}</td>"
                 f"<td>{escape(address)}</td><td>{escape(profile)}</td>"
                 "</tr>"
             )
@@ -1752,7 +1790,12 @@ class HtmlReportBuilder:
             elif check.check_name == "utils service list":
                 summary = f"{details.get('started', '0')} started; {details.get('stopped', '0')} stopped; {details.get('not_activated', '0')} not activated"
             elif check.check_name == "show cuc cluster status":
-                summary = f"{details.get('primary_nodes', '0')} primary; {details.get('secondary_nodes', '0')} secondary; {details.get('connected_peers', '0')} connected peers"
+                primary = details.get("primary_nodes", "0")
+                secondary = details.get("secondary_nodes", "0")
+                health = "healthy replication connectivity observed"
+                if details.get("unhealthy_states") not in {None, "0"}:
+                    health = "replication state needs review"
+                summary = f"{primary} primary; {secondary} secondary; {health}"
             elif check.check_name == "show network eth0 detail":
                 summary = f"Link {details.get('link_status', 'unknown')}; duplicate IP {details.get('duplicate_ip', 'unknown')}"
             else:
@@ -1918,6 +1961,24 @@ class HtmlReportBuilder:
             for item in occurrences[:1]
         )
 
+    @staticmethod
+    def _certificate_summary(report: AssessmentReport) -> str:
+        selected = [
+            item for item in report.facts.certificates
+            if item.days_remaining is not None and item.days_remaining <= 60
+        ]
+        if not selected:
+            return ""
+        expired = sum(1 for item in selected if item.days_remaining is not None and item.days_remaining < 0)
+        expiring = len(selected) - expired
+        stores = sorted({item.service or item.store or "Unclassified store" for item in selected})
+        earliest = min(item.days_remaining for item in selected if item.days_remaining is not None)
+        return (
+            '<p class="meta"><strong>Certificate attention summary:</strong> '
+            f"{expired} expired; {expiring} expiring within 60 days; "
+            f"earliest expiry {earliest} days; affected stores: {escape(', '.join(stores))}.</p>"
+        )
+
     def _collector_issues_section(self, report: AssessmentReport) -> str:
         rows = []
         for result in report.collector_results:
@@ -1929,7 +1990,7 @@ class HtmlReportBuilder:
                 )
                 rows.append(
                     "<tr>"
-                    f"<td>{escape(result.collector_name)}</td>"
+                    f"<td>{escape(self._collector_label(result.collector_name))}</td>"
                     "<td>warning</td>"
                     f"<td>{escape(message)}</td>"
                     "</tr>"
@@ -1963,6 +2024,8 @@ class HtmlReportBuilder:
 """
 
     def _collector_notes_section(self, report: AssessmentReport) -> str:
+        if self.customer_safe:
+            return ""
         rows = []
         for result in report.collector_results:
             for note in result.notes:
@@ -1995,6 +2058,15 @@ class HtmlReportBuilder:
 """
 
     def _collector_evidence_section(self, report: AssessmentReport) -> str:
+        if self.customer_safe:
+            evidence_count = sum(len(result.evidence) for result in report.collector_results)
+            return f"""
+    <section>
+      <h2>Collection Evidence</h2>
+      <p class="meta">{evidence_count} evidence references were captured. Detailed technical
+      operations and private engineering artifacts are omitted from this customer deliverable.</p>
+    </section>
+"""
         rows = []
         for result in report.collector_results:
             for evidence in result.evidence:
@@ -2184,14 +2256,20 @@ class HtmlReportBuilder:
             escaped_recommendation = escape(finding.recommendation)
             recommendation = f"<p><strong>Recommendation:</strong> {escaped_recommendation}</p>"
         evidence = self._evidence_list(finding)
+        finding_metadata = (
+            f"Severity: {severity}"
+            if self.customer_safe
+            else (
+                f"Rule: {escape(finding.rule_id)} | Severity: {severity} | "
+                f"Type: {escape(finding.recommendation_kind.value)}"
+            )
+        )
 
         return f"""
       <article class="finding {severity}">
         <h3>{escape(finding.title)}</h3>
         <div class="meta">
-          Rule: {escape(finding.rule_id)} |
-          Severity: {severity} |
-          Type: {escape(finding.recommendation_kind.value)}
+          {finding_metadata}
         </div>
         <p><strong>Reasoning:</strong> {escape(finding.reasoning)}</p>
         <p><strong>Facts:</strong></p>
@@ -2206,6 +2284,8 @@ class HtmlReportBuilder:
     def _evidence_list(self, finding: HealthFinding) -> str:
         if not finding.evidence:
             return ""
+        if self.customer_safe:
+            return "<p><strong>Evidence:</strong> Collection evidence was captured for this finding.</p>"
 
         items = []
         for evidence in finding.evidence:
@@ -2236,6 +2316,16 @@ class HtmlReportBuilder:
             return text
         digest = sha256(f"{kind}:{text}".encode()).hexdigest()[:8].upper()
         return f"{kind}-{digest}"
+
+    def _collector_label(self, name: str) -> str:
+        """Keep internal target/profile labels out of customer-safe report metadata."""
+
+        if not self.customer_safe:
+            return name
+        technology_match = name.rsplit("[", maxsplit=1)
+        if len(technology_match) == 2 and technology_match[1].endswith("]"):
+            return f"{technology_match[1][:-1].upper()} collector"
+        return "Assessment collector"
 
 
 def _protocol_bucket(protocol: str | None) -> str:

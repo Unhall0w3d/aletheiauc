@@ -34,3 +34,8 @@ selected report as `report.html` and a separately rendered,
 always-masked `customer_safe_report.html`. This permits side-by-side review of
 the customer deliverable while retaining the engineering artifacts in the same
 private bundle.
+
+Customer-safe reports use the same assessment facts as engineering reports.
+They do not use synthetic data; instead they replace target and node identifiers
+with neutral labels, omit detailed technical evidence inventories, and retain
+the findings and summarized collection coverage needed for customer review.
