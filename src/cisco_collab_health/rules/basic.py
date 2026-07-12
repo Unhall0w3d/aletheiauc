@@ -541,6 +541,42 @@ class PlatformCheckSummaryRule:
         ]
 
 
+class CucPlatformHealthRule:
+    """Conservative findings from normalized Unity Connection UCOS summaries."""
+
+    rule_id = "cuc.platform_health"
+
+    def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
+        checks = {item.check_name: item for item in facts.platform_checks if item.source == "CUC.UCOS.CLI"}
+        findings: list[HealthFinding] = []
+        diagnostic = checks.get("utils diagnose test")
+        if diagnostic and int(diagnostic.details.get("failed", "0")):
+            findings.append(_cuc_finding("diagnostic_failures", FindingSeverity.WARNING, "Unity Connection diagnostic tests failed", [f"Failed tests: {diagnostic.details['failed']}"]))
+        services = checks.get("utils service list")
+        if services and int(services.details.get("stopped", "0")) > int(services.details.get("not_activated", "0")):
+            findings.append(_cuc_finding("unexpected_stopped_services", FindingSeverity.WARNING, "Unity Connection services are unexpectedly stopped", [f"Stopped: {services.details.get('stopped')}", f"Not activated: {services.details.get('not_activated')}"]))
+        core = checks.get("utils core active list")
+        if core and core.details.get("core_files") == "present":
+            findings.append(_cuc_finding("core_files", FindingSeverity.WARNING, "Unity Connection active core files found", ["Review core files before removal or escalation."]))
+        cluster = checks.get("show cuc cluster status")
+        if cluster and int(cluster.details.get("unhealthy_states", "0")):
+            findings.append(_cuc_finding("replication", FindingSeverity.CRITICAL, "Unity Connection cluster replication reports unhealthy state", [f"Unhealthy states: {cluster.details['unhealthy_states']}"]))
+        network = checks.get("show network eth0 detail")
+        if network and (network.details.get("link_status") != "up" or network.details.get("duplicate_ip") == "yes"):
+            findings.append(_cuc_finding("network", FindingSeverity.CRITICAL, "Unity Connection Ethernet 0 health issue", [f"Link: {network.details.get('link_status')}", f"Duplicate IP: {network.details.get('duplicate_ip')}"]))
+        return findings
+
+
+def _cuc_finding(suffix: str, severity: FindingSeverity, title: str, facts: list[str]) -> HealthFinding:
+    return HealthFinding(
+        rule_id=f"cuc.platform_health.{suffix}", title=title, severity=severity,
+        recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION, facts=facts,
+        reasoning="UCOS platform summaries reported a condition requiring engineering review.",
+        recommendation="Review the retained UCOS evidence and correct the affected platform condition.",
+        evidence=[EvidenceRef(source="CUC.UCOS.CLI", operation="platform_summary", confidence="high")],
+    )
+
+
 class DeviceLoadSummaryRule:
     """Summarizes device load facts."""
 

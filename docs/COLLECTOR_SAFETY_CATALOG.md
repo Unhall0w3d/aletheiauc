@@ -23,3 +23,8 @@ evidence after configured redaction.
 An unsupported command must be omitted by selection logic, not executed and
 misreported as a health failure. CUC command behavior is fixture-tested; exact
 output and runtime require live validation on supported Unity Connection versions.
+
+Normalized diagnostic failures, unexpected stopped services, active core files,
+unhealthy replication state, duplicate IP detection, and link-down state produce
+conservative CUC platform findings. Services explicitly marked not activated are
+reported as inventory state, not treated as failures.

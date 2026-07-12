@@ -30,6 +30,7 @@ from cisco_collab_health.reports.json import JsonReportBuilder
 from cisco_collab_health.reports.summary import ExecutiveSummaryBuilder
 from cisco_collab_health.rules.basic import (
     ClusterIdentityRule,
+    CucPlatformHealthRule,
     CertificateValidityRule,
     CollectorHealthRule,
     ConfigurationInventorySummaryRule,
@@ -171,6 +172,7 @@ def run_assessment(
         collectors=collectors,
         rules=[
             ClusterIdentityRule(),
+            CucPlatformHealthRule(),
             CertificateValidityRule(),
             NodeReachabilityRule(),
             CollectorHealthRule(),
@@ -442,6 +444,7 @@ def run_multi_assessment(
 def _assessment_rules() -> list[HealthRule]:
     return [
         ClusterIdentityRule(),
+        CucPlatformHealthRule(),
         CertificateValidityRule(),
         NodeReachabilityRule(),
         CollectorHealthRule(),
