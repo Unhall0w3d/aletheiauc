@@ -14,7 +14,6 @@ evidence after configured redaction.
 | `cuc.show_hardware` | `show hardware` | 30s |
 | `cuc.show_network_cluster` | `show network cluster` | 30s |
 | `cuc.show_network_eth0_detail` | `show network eth0 detail` | 30s |
-| `cuc.show_perf_processor_memory` | `show perf query class Processor\|Memory` | 30s |
 | `cuc.utils_diagnose_test` | `utils diagnose test` | 180s |
 | `cuc.utils_service_list` | `utils service list` | 120s |
 | `cuc.utils_core_active_list` | `utils core active list` | 120s |
@@ -28,3 +27,9 @@ Normalized diagnostic failures, unexpected stopped services, active core files,
 unhealthy replication state, duplicate IP detection, and link-down state produce
 conservative CUC platform findings. Services explicitly marked not activated are
 reported as inventory state, not treated as failures.
+
+`show network cluster` also provides bounded, normalized CUC publisher and
+subscriber node facts for the shared cluster-member report table. A prior
+`show perf query class Processor|Memory` probe was removed after live CUC output
+showed the appliance parses it as an invalid `ProcessorMemory` class; it did not
+produce usable assessment data.

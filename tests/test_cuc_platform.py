@@ -11,6 +11,7 @@ from cisco_collab_health.collectors.cuc_platform import (
     CUC_COMMAND_CATALOG,
     CUC_SAFE_CLI_COMMANDS,
     CucPlatformCollector,
+    _cuc_cluster_nodes,
     _cuc_cli_summary,
     _cuc_version,
 )
@@ -52,6 +53,23 @@ class CucPlatformCollectorTests(unittest.TestCase):
         )
         self.assertEqual(_cuc_cli_summary("utils core active list", "No core files found")["core_files"], "0")
         self.assertEqual(_cuc_version("Active Master Version: 15.0.1.12900-43"), "15.0.1.12900-43")
+
+    def test_network_cluster_output_normalizes_cuc_members(self) -> None:
+        nodes = _cuc_cluster_nodes(
+            "\n".join(
+                (
+                    "10.51.200.9 YT-UCX-PUB.example.org YT-UCX-PUB Publisher connection DBPub authenticated",
+                    "10.51.202.14 UCX-SUB.example.org UCX-SUB Subscriber connection DBSub authenticated",
+                )
+            ),
+            target_id="cuc-example",
+        )
+
+        self.assertEqual(
+            [(node.role, node.address) for node in nodes],
+            [("publisher", "10.51.200.9"), ("subscriber", "10.51.202.14")],
+        )
+        self.assertTrue(all(node.technology == "cuc" for node in nodes))
 
     def test_collector_records_only_safe_commands_and_artifacts(self) -> None:
         commands: list[str] = []

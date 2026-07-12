@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from cisco_collab_health.collectors.base import CollectionResult
-from cisco_collab_health.models.facts import AssessmentFacts, ClusterIdentity, PlatformCheckFact
+from cisco_collab_health.models.facts import (
+    AssessmentFacts,
+    ClusterIdentity,
+    CollaborationNode,
+    PlatformCheckFact,
+)
 from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.transport.ssh import SshCommandResult, SshCommandTimeout, UcosSshSession
 
@@ -30,7 +35,6 @@ CUC_COMMAND_CATALOG = (
     UcosCommand("cuc.show_hardware", "show hardware", 30),
     UcosCommand("cuc.show_network_cluster", "show network cluster", 30),
     UcosCommand("cuc.show_network_eth0_detail", "show network eth0 detail", 30),
-    UcosCommand("cuc.show_perf_processor_memory", "show perf query class Processor|Memory", 30),
     UcosCommand("cuc.utils_diagnose_test", "utils diagnose test", 180),
     UcosCommand("cuc.utils_service_list", "utils service list", 120),
     UcosCommand("cuc.utils_core_active_list", "utils core active list", 120),
@@ -61,6 +65,7 @@ class CucPlatformCollector:
         facts = AssessmentFacts()
         warnings: list[str] = []
         version: str | None = None
+        command_output: dict[str, str] = {}
         node = context.publisher_ip or context.target
         if not node:
             return CollectionResult(self.name, facts, warnings=["CUC target is missing."])
@@ -103,6 +108,7 @@ class CucPlatformCollector:
                         context.artifact_store.write_command_output(node, command, result.output)
                     if command == "show version active":
                         version = _cuc_version(result.output)
+                    command_output[command] = result.output
                     facts.platform_checks.append(
                         PlatformCheckFact(
                             node=node,
@@ -124,6 +130,10 @@ class CucPlatformCollector:
             warnings.append(f"CUC SSH session failed: {exc}")
         if version:
             facts.cluster = ClusterIdentity(node, "Cisco Unity Connection", version)
+        for cluster_node in _cuc_cluster_nodes(
+            command_output.get("show network cluster", ""), target_id=context.target_id
+        ):
+            facts.add_node(cluster_node)
         return CollectionResult(self.name, facts, warnings=warnings)
 
 
@@ -164,3 +174,24 @@ def _cuc_cli_summary(command: str, output: str) -> dict[str, str]:
 def _cuc_version(output: str) -> str | None:
     match = re.search(r"(?im)^Active Master Version:\s*(\S+)", output)
     return match.group(1) if match else None
+
+
+def _cuc_cluster_nodes(output: str, *, target_id: str | None) -> list[CollaborationNode]:
+    """Normalize the bounded UCOS cluster listing into shared report node facts."""
+
+    nodes: list[CollaborationNode] = []
+    pattern = re.compile(
+        r"(?im)^(?P<address>\S+)\s+(?P<name>\S+)\s+\S+\s+"
+        r"(?P<role>Publisher|Subscriber)\b"
+    )
+    for match in pattern.finditer(output):
+        nodes.append(
+            CollaborationNode(
+                name=match.group("name"),
+                address=match.group("address"),
+                role=match.group("role").lower(),
+                technology="cuc",
+                target_id=target_id,
+            )
+        )
+    return nodes
