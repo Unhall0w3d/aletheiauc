@@ -1,4 +1,17 @@
-# Runtime dependency metadata is authoritative in pyproject.toml.
-# This legacy convenience file intentionally installs the local project rather
-# than maintaining a second, drift-prone dependency list.
-.
+# Cross-platform development and test environment dependencies.
+# These are intentionally explicit so a Windows or Linux test virtual
+# environment can be created from a checkout without installing the project
+# by local path. pyproject.toml remains authoritative for package metadata.
+
+# Runtime
+keyring>=25
+defusedxml>=0.7
+cryptography>=44
+paramiko>=3.4
+
+# Build and quality gates
+build>=1.2
+pytest>=8
+ruff>=0.5
+mypy>=1.10
+types-defusedxml>=0.7

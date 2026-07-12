@@ -117,7 +117,7 @@ the same run.
 
 ## Quick Start
 
-Install runtime dependencies:
+Create a cross-platform development/test environment from a checkout:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -138,6 +138,12 @@ Run AletheiaUC from a cloned repository:
 This launcher is the main user entry point for a cloned repository. It opens the
 interactive menu by default and loads the package from `src/` directly, so an
 editable package install is optional.
+
+`requirements.txt` explicitly contains the runtime dependencies and local build/
+quality tools needed for a Windows or Linux test virtual environment. It does
+not install the local checkout. `pyproject.toml` remains authoritative for
+package metadata; use `python -m pip install .` for a non-editable package
+installation or `python -m pip install -e .` for editable console commands.
 
 If you install the package, the module and console-script entry points are also
 available:

@@ -1,4 +1,4 @@
-# Local project guidance
+# Private local project guidance; intentionally never published with the repository.
 Soul/
 
 # Python bytecode and caches
@@ -60,7 +60,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Generated reports and temporary exports
+# Generated private assessment output. Review ZIP input is supplied locally and is not tracked.
 /assessment_runs/
 /logs/
 /reports/

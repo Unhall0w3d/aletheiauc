@@ -1,6 +1,8 @@
 # Engineering Hardening — Current-State Gap Analysis
 
-Reviewed on 2026-07-12 against `main` at `6b1b596c08cafee4c8149c12c3e81be7877e55e6`.
+Historical Phase 0 snapshot reviewed on 2026-07-12 against `main` at
+`6b1b596c08cafee4c8149c12c3e81be7877e55e6`. Later hardening commits supersede
+the matrix statuses where implementation has since landed.
 The historical `03102c2` overlay was reviewed only as a source of hypotheses; none of
 its replacement files were applied.
 
