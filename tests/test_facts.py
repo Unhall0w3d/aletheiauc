@@ -7,6 +7,7 @@ import unittest
 from cisco_collab_health.models.facts import (
     AssessmentFacts,
     CollaborationNode,
+    ConfigurationObjectFact,
     DeviceInventoryFact,
     DeviceLoadDefaultFact,
     DeviceRegistrationFact,
@@ -17,6 +18,19 @@ from cisco_collab_health.models.facts import (
 
 
 class AssessmentFactsTests(unittest.TestCase):
+    def test_configuration_merge_preserves_same_pattern_partition_with_distinct_uuids(self) -> None:
+        facts = AssessmentFacts(configuration_objects=[ConfigurationObjectFact(
+            object_type="RoutePattern", name="8.@", details={"partition": "FAC-PT"},
+            source="AXL.listRoutePattern", uuid="{AAA}",
+        )])
+
+        facts.merge(AssessmentFacts(configuration_objects=[ConfigurationObjectFact(
+            object_type="RoutePattern", name="8.@", details={"partition": "FAC-PT"},
+            source="AXL.listRoutePattern", uuid="{BBB}",
+        )]))
+
+        self.assertEqual(len(facts.configuration_objects), 2)
+
     def test_runtime_registration_is_enriched_from_axl_inventory(self) -> None:
         facts = AssessmentFacts(
             devices=[

@@ -343,6 +343,8 @@ adds raw request/response evidence for:
   relationships that CUCM omits from list responses
 - One `first 500` read-only SQL relationship query for route-pattern destinations
   and ordered route-group membership, keyed back to the AXL list UUID
+- UUID-preserving configuration normalization, including route-filter and dial-plan
+  distinctions for otherwise identical route-pattern/partition combinations
 
 All diagnostic calls are read-only. Supported RISPort70, Control Center, and
 PerfMon responses are normalized into registration, service-status, and

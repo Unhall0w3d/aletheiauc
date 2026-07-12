@@ -415,7 +415,7 @@ class HtmlReportBuilder:
       <h3>Route Pattern Destinations</h3>
       <details><summary>Show route pattern relationships</summary>
       <div class="table-scroll"><table>
-        <thead><tr><th>Pattern</th><th>Partition</th><th>Gateway or Route List</th></tr></thead>
+        <thead><tr><th>Pattern</th><th>Partition</th><th>Route Filter</th><th>Dial Plan</th><th>Gateway or Route List</th></tr></thead>
         <tbody>{route_pattern_rows}</tbody>
       </table></div>
       </details>
@@ -1025,12 +1025,14 @@ class HtmlReportBuilder:
 
     def _route_pattern_relationship_rows(self, report: AssessmentReport) -> str:
         if self.customer_safe:
-            return '<tr><td colspan="3">Dial-plan names omitted from customer-safe report.</td></tr>'
+            return '<tr><td colspan="5">Dial-plan names omitted from customer-safe report.</td></tr>'
         patterns = [item for item in report.facts.configuration_objects if item.object_type == "RoutePattern"]
         if not patterns:
-            return '<tr><td colspan="3">No route patterns collected.</td></tr>'
+            return '<tr><td colspan="5">No route patterns collected.</td></tr>'
         return "\n".join(
             f"<tr><td>{escape(item.name)}</td><td>{escape(display_text(item.details.get('partition')))}</td>"
+            f"<td>{escape(display_text(item.details.get('route_filter')))}</td>"
+            f"<td>{escape(display_text(item.details.get('dial_plan')))}</td>"
             f"<td>{escape(display_text(item.details.get('destination'), empty='Relationship unavailable'))}</td></tr>"
             for item in sorted(patterns, key=lambda item: (item.name, item.details.get("partition", "")))
         )

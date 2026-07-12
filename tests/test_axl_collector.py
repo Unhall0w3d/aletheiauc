@@ -246,19 +246,22 @@ class AxlCollectorTests(unittest.TestCase):
         self.assertIn("&amp;", execute_sql_query_body("select '&' from table"))
 
     def test_diagnostic_axl_parser_normalizes_configuration_objects(self) -> None:
-        response = """<Envelope><return><routePattern><pattern>9.!#</pattern>
-        <routePartitionName>PT-PSTN</routePartitionName></routePattern></return></Envelope>"""
+        response = """<Envelope><return><routePattern uuid="{ABC}"><pattern>9.!#</pattern>
+        <routePartitionName>PT-PSTN</routePartitionName><routeFilterName>US-RF</routeFilterName>
+        <dialPlanName>NANP</dialPlanName></routePattern></return></Envelope>"""
 
         facts = parse_configuration_objects(
             response,
             "listRoutePattern",
-            ("pattern", "routePartitionName"),
+            ("pattern", "routePartitionName", "routeFilterName", "dialPlanName"),
         )
 
         self.assertEqual(len(facts), 1)
         self.assertEqual(facts[0].object_type, "RoutePattern")
         self.assertEqual(facts[0].name, "9.!#")
         self.assertEqual(facts[0].details["partition"], "PT-PSTN")
+        self.assertEqual(facts[0].details["route_filter"], "US-RF")
+        self.assertEqual(facts[0].details["dial_plan"], "NANP")
 
     def test_diagnostic_axl_parser_normalizes_nested_memberships(self) -> None:
         response = """<Envelope><return><routeList uuid="{ABC}"><name>PSTN-RL</name><members>

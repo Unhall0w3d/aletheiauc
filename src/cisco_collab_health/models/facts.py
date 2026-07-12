@@ -502,8 +502,11 @@ def _platform_check_key(fact: PlatformCheckFact) -> tuple[str, str]:
     return (_normalize_node_key(fact.node), fact.check_name.strip().lower())
 
 
-def _configuration_object_key(fact: ConfigurationObjectFact) -> tuple[str, str, str]:
+def _configuration_object_key(fact: ConfigurationObjectFact) -> tuple[str, ...]:
+    if fact.uuid:
+        return ("uuid", fact.uuid.strip().strip("{}").lower())
     return (
+        "natural",
         fact.object_type.strip().lower(),
         fact.name.strip().lower(),
         fact.details.get("partition", "").strip().lower(),

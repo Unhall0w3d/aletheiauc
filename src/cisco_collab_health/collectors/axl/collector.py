@@ -64,7 +64,13 @@ DIAGNOSTIC_AXL_OPERATIONS = (
         "name",
         ("name", "description", "devicePoolName", "locationName", "sipProfileName"),
     ),
-    ("listRoutePattern", "pattern", ("pattern", "routePartitionName", "gatewayOrRouteListName")),
+    (
+        "listRoutePattern", "pattern",
+        (
+            "pattern", "routePartitionName", "routeFilterName", "dialPlanName",
+            "gatewayOrRouteListName",
+        ),
+    ),
     ("listRoutePartition", "name", ("name", "description")),
     ("listCss", "name", ("name", "description", "members/member/routePartitionName")),
     ("listRouteGroup", "name", ("name", "distributionAlgorithm", "members/member/deviceName")),

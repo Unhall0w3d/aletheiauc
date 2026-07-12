@@ -248,6 +248,8 @@ def _configuration_detail_name(tag: str) -> str:
         "sipProfileName": "sip_profile",
         "distributionAlgorithm": "distribution_algorithm",
         "gatewayOrRouteListName": "destination",
+        "routeFilterName": "route_filter",
+        "dialPlanName": "dial_plan",
         "members/member/routePartitionName": "partitions",
         "members/member/routeGroupName": "route_groups",
         "members/member/deviceName": "devices",
