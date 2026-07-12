@@ -1,9 +1,9 @@
 # Transport trust
 
-HTTPS certificate verification is enabled by default. Use the system trust
-store or `--ca-bundle /path/to/customer-ca.pem` for private Cisco PKI. Use
-`--insecure` only for a deliberate, documented lab exception; it cannot be
-combined with `--ca-bundle`.
+HTTPS collection warns and continues without certificate verification by default
+because many Cisco UC deployments use self-signed certificates. Use
+`--verify-tls` with the system trust store or `--ca-bundle /path/to/customer-ca.pem`
+when the environment supports verified TLS. `--ca-bundle` requires `--verify-tls`.
 
 UCOS SSH rejects unknown host keys by default. After verifying a displayed host
 fingerprint out of band, use `--accept-new-host-key` once to enroll the key in

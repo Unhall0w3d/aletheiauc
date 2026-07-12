@@ -215,17 +215,17 @@ def build_parser() -> argparse.ArgumentParser:
     tls_group.add_argument(
         "--verify-tls",
         action="store_true",
-        help="Compatibility flag; TLS verification is enabled by default.",
+        help="Verify HTTPS certificates using system trust or --ca-bundle.",
     )
     tls_group.add_argument(
         "--insecure",
         action="store_true",
-        help="Disable CUCM HTTPS certificate verification for a deliberate lab exception.",
+        help="Disable HTTPS certificate verification (the default for self-signed UC environments).",
     )
     parser.add_argument(
         "--ca-bundle",
         default=None,
-        help="CA bundle path used with TLS verification (enabled by default).",
+        help="CA bundle path used when --verify-tls is enabled.",
     )
     parser.add_argument(
         "--accept-new-host-key",
@@ -270,8 +270,8 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.error("--reset-technology requires --profile")
     if args.assessment_target and not args.assessment_profile:
         parser.error("--assessment-target requires --assessment-profile")
-    if args.ca_bundle and args.insecure:
-        parser.error("--ca-bundle cannot be combined with --insecure")
+    if args.ca_bundle and not args.verify_tls:
+        parser.error("--ca-bundle requires --verify-tls")
     if args.export_review_zip and args.no_logs:
         parser.error("--export-review-zip cannot be combined with --no-logs")
     if args.phone_inventory_page_size < 1:

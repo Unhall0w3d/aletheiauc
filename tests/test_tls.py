@@ -11,12 +11,12 @@ from cisco_collab_health.transport.tls import TlsPolicy, build_ssl_context
 
 
 class TlsPolicyTests(unittest.TestCase):
-    def test_default_cli_tls_policy_verifies_certificates(self) -> None:
+    def test_default_cli_tls_policy_allows_self_signed_uc_environments(self) -> None:
         args = build_parser().parse_args([])
 
         policy = _tls_policy_from_args(args)
 
-        self.assertTrue(policy.verify)
+        self.assertFalse(policy.verify)
         self.assertIsNone(policy.ca_bundle)
 
     def test_cli_tls_policy_supports_verify_and_ca_bundle(self) -> None:
@@ -33,14 +33,9 @@ class TlsPolicyTests(unittest.TestCase):
 
         self.assertEqual(exc.exception.code, 2)
 
-    def test_ca_bundle_is_valid_with_default_tls_verification(self) -> None:
+    def test_ca_bundle_requires_explicit_tls_verification(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["--ca-bundle", "/tmp/ca.pem"])
-        _validate_args(parser, args)
-
-    def test_ca_bundle_cannot_be_combined_with_insecure(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--insecure", "--ca-bundle", "/tmp/ca.pem"])
 
         with self.assertRaises(SystemExit) as exc:
             _validate_args(parser, args)

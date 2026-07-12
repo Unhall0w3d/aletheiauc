@@ -458,7 +458,7 @@ def _assessment_rules() -> list[HealthRule]:
 
 
 def tls_policy_from_args(args: argparse.Namespace) -> TlsPolicy:
-    verify = not args.insecure
+    verify = bool(args.verify_tls and not args.insecure)
     ca_bundle = Path(args.ca_bundle).expanduser() if args.ca_bundle else None
     return TlsPolicy(verify=verify, ca_bundle=ca_bundle)
 
@@ -583,7 +583,7 @@ def _print_preflight_status(preflight: PreflightResult, status: StatusPrinter) -
             status.warn(f"{message}{detail}")
 
     for interface in preflight.interfaces:
-        transport_message = f"{interface.name} transport: {interface.endpoint}"
+        transport_message = f"{interface.name} TCP reachability: {interface.endpoint}"
         if interface.transport_available:
             status.ok(transport_message)
         else:
