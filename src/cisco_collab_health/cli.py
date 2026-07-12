@@ -6,9 +6,14 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from cisco_collab_health.application import run_assessment, tls_policy_from_args
+from cisco_collab_health.application import run_assessment, run_multi_assessment, tls_policy_from_args
 from cisco_collab_health.config import (
     ensure_runtime_profile,
+    AssessmentProfile,
+    AssessmentTarget,
+    load_assessment_profiles,
+    resolve_assessment_targets,
+    save_assessment_profiles,
     select_or_create_runtime_profile,
 )
 from cisco_collab_health.menu import run_menu
@@ -83,6 +88,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--profile",
         help="Local connection profile name. If omitted, choose from saved profiles or create one.",
+    )
+    parser.add_argument(
+        "--assessment-profile",
+        help="Multi-technology assessment profile containing independently credentialed targets.",
+    )
+    parser.add_argument(
+        "--assessment-target",
+        action="append",
+        default=[],
+        metavar="ID:TECHNOLOGY:PROFILE",
+        help="Add/update a target in --assessment-profile; repeat for multiple technologies.",
     )
     parser.add_argument(
         "--product",
@@ -217,6 +233,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.assessment_profile and args.profile:
+        parser.error("--assessment-profile cannot be combined with --profile")
+    if args.assessment_profile and args.product != "cucm":
+        parser.error("--product is defined by each target in --assessment-profile")
+    if args.assessment_target and not args.assessment_profile:
+        parser.error("--assessment-target requires --assessment-profile")
     if args.ca_bundle and not args.verify_tls:
         parser.error("--ca-bundle requires --verify-tls")
     if args.export_review_zip and args.no_logs:
@@ -236,6 +258,34 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
 def _run(args: argparse.Namespace, status: StatusPrinter) -> int:
     if args.skip_profile:
         return run_assessment(args, status, None)
+
+    if args.assessment_profile:
+        assessments = load_assessment_profiles()
+        assessment: AssessmentProfile | None
+        if args.assessment_target:
+            parsed_targets = []
+            for specification in args.assessment_target:
+                parts = specification.split(":", 2)
+                if len(parts) != 3:
+                    raise ValueError(
+                        "Assessment targets must use ID:TECHNOLOGY:PROFILE format."
+                    )
+                parsed_targets.append(AssessmentTarget(*parts))
+            assessment = AssessmentProfile(args.assessment_profile, tuple(parsed_targets))
+            assessments[assessment.name] = assessment
+            save_assessment_profiles(assessments)
+        else:
+            assessment = assessments.get(args.assessment_profile)
+        if assessment is None:
+            available = ", ".join(sorted(assessments)) or "none"
+            raise ValueError(
+                f"Assessment profile '{args.assessment_profile}' was not found. Available: {available}."
+            )
+        targets = resolve_assessment_targets(
+            assessment, reset=args.reset_profile,
+            save_credentials=not args.no_save_credentials,
+        )
+        return run_multi_assessment(args, status, assessment.name, targets)
 
     if args.profile:
         runtime_profile = ensure_runtime_profile(

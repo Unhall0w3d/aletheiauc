@@ -217,8 +217,11 @@ class SoapClient:
         if store is None:
             return None, None
         artifact_store = cast(ArtifactStore, store)
+        artifact_node = (
+            f"{context.target_id}--{request.node}" if context.target_id else request.node
+        )
         paths: tuple[Path, Path] = artifact_store.write_api_exchange(
-            request.node,
+            artifact_node,
             request.interface,
             request.artifact_operation or request.operation,
             request=artifact_request,
@@ -227,6 +230,7 @@ class SoapClient:
         artifact_store.record_operation_attempt(
             {
                 "interface": request.interface,
+                "target_id": context.target_id,
                 "operation": request.operation,
                 "artifact_operation": request.artifact_operation or request.operation,
                 "node": request.node,

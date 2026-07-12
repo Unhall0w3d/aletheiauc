@@ -16,7 +16,8 @@ from cisco_collab_health.artifacts import (
     write_preflight_artifacts,
 )
 from cisco_collab_health.collector_registry import select_collectors
-from cisco_collab_health.config import RuntimeProfile
+from cisco_collab_health.collectors.base import Collector, TargetPipelineCollector
+from cisco_collab_health.config import AssessmentTarget, RuntimeProfile
 from cisco_collab_health.engine import AssessmentEngine
 from cisco_collab_health.interfaces import PreflightResult, run_publisher_preflight
 from cisco_collab_health.models.assessment import AssessmentReport
@@ -39,6 +40,7 @@ from cisco_collab_health.rules.basic import (
     ServiceSummaryRule,
     ServiceRuntimeRule,
 )
+from cisco_collab_health.rules.base import HealthRule
 from cisco_collab_health.status import StatusPrinter
 from cisco_collab_health.transport.tls import TlsPolicy
 
@@ -249,6 +251,124 @@ def run_assessment(
             status.ok(f"Review ZIP written: {review_zip}")
 
     return 0
+
+
+def run_multi_assessment(
+    args: argparse.Namespace, status: StatusPrinter, assessment_name: str,
+    targets: list[tuple[AssessmentTarget, RuntimeProfile]],
+) -> int:
+    """Run independently credentialed technology targets into one report."""
+
+    tls_policy = tls_policy_from_args(args)
+    run_started = datetime.now()
+    log_store = _create_log_store(args, status, assessment_name, run_started)
+    _write_log_manifest(log_store, profile_name=assessment_name, publisher_ip=None)
+    artifact_store = _create_artifact_store(args, status, assessment_name, run_started)
+    pipelines: list[Collector] = []
+    target_metadata = []
+    for target, runtime in targets:
+        status.stage(f"Preparing {target.target_id} ({target.technology})")
+        context = CollectionContext(
+            target=runtime.stored.publisher_ip, publisher_ip=runtime.stored.publisher_ip,
+            username=runtime.stored.gui_username, product=target.technology,
+            target_id=target.target_id,
+            gui_username=runtime.stored.gui_username, gui_password=runtime.gui_password,
+            os_username=runtime.stored.os_username, os_password=runtime.os_password,
+            axl_port=args.axl_port, risport_port=args.risport_port,
+            control_center_port=args.control_center_port, perfmon_port=args.perfmon_port,
+            collect_phone_inventory=args.collect_phone_inventory,
+            phone_inventory_page_size=args.phone_inventory_page_size,
+            phone_inventory_max_devices=args.phone_inventory_max_devices,
+            diagnostic_capture=args.diagnostic_capture,
+            diagnostic_max_devices=args.diagnostic_max_devices,
+            diagnostic_axl_page_size=args.diagnostic_axl_page_size,
+            diagnostic_axl_max_records=args.diagnostic_axl_max_records,
+            tls=tls_policy, artifact_store=artifact_store,
+        )
+        preflight = None
+        if target.technology == "cucm":
+            preflight = run_publisher_preflight(
+                context, axl_port=args.axl_port, risport_port=args.risport_port,
+                control_center_port=args.control_center_port, perfmon_port=args.perfmon_port,
+            )
+            _print_preflight_status(preflight, status)
+            if artifact_store:
+                write_preflight_artifacts(
+                    artifact_store,
+                    f"{target.target_id}--{runtime.stored.publisher_ip}",
+                    preflight,
+                )
+        collectors = select_collectors(
+            preflight, diagnostic_capture=args.diagnostic_capture,
+            product=target.technology,
+        )
+        pipelines.append(TargetPipelineCollector(
+            target_id=target.target_id, technology=target.technology,
+            collectors=tuple(collectors), target_context=context,
+        ))
+        target_metadata.append({
+            "target_id": target.target_id, "technology": target.technology,
+            "connection_profile": target.connection_profile,
+            "address": runtime.stored.publisher_ip,
+        })
+    if artifact_store:
+        artifact_store.write_manifest({
+            "tool": "aletheiauc", "assessment_profile": assessment_name,
+            "targets": target_metadata, "artifact_redaction": args.artifact_redaction,
+            "tls_verify": tls_policy.verify,
+            "tls_ca_bundle": str(tls_policy.ca_bundle) if tls_policy.ca_bundle else None,
+        })
+    status.stage("Running multi-technology collectors")
+    engine = AssessmentEngine(collectors=pipelines, rules=_assessment_rules())
+    report = engine.run(CollectionContext(product="multi", artifact_store=artifact_store))
+    report = replace(report, runtime_metadata={
+        "assessment_profile": assessment_name, "targets": target_metadata,
+        "artifacts_enabled": artifact_store is not None,
+        "artifact_redaction": args.artifact_redaction if artifact_store else None,
+        "tls_verification": tls_policy.verify,
+        "diagnostic_capture": args.diagnostic_capture,
+        "customer_safe_report": args.customer_safe_report,
+    })
+    status.ok("Multi-technology collectors completed")
+    for result in report.collector_results:
+        for warning in result.warnings:
+            status.warn(f"{result.collector_name}: {warning}")
+        for error in result.errors:
+            status.fail(f"{result.collector_name}: {error.exception_type}: {error.message}")
+    if artifact_store:
+        write_assessment_artifacts(artifact_store, report)
+    html_report_path = None
+    if not args.no_html_report:
+        html_report_path = _write_html_report(
+            report, args.html_report, customer_safe=args.customer_safe_report,
+        )
+        status.ok(f"HTML report written: {html_report_path}")
+    summary_text = ExecutiveSummaryBuilder().build(
+        report, str(html_report_path) if html_report_path else None,
+    )
+    if args.format == "json":
+        print(JsonReportBuilder().build(report))
+    else:
+        print(summary_text)
+    if log_store:
+        write_log_bundle(
+            log_store, report=report, summary_text=summary_text,
+            artifact_store=artifact_store, html_report_path=html_report_path,
+        )
+        if args.export_review_zip:
+            review_zip = export_review_zip(log_store)
+            status.ok(f"Review ZIP written: {review_zip}")
+    return 0
+
+
+def _assessment_rules() -> list[HealthRule]:
+    return [
+        ClusterIdentityRule(), CertificateValidityRule(), NodeReachabilityRule(),
+        CollectorHealthRule(), DeviceLoadRule(), DeviceInventorySummaryRule(),
+        RegistrationSummaryRule(), ServiceSummaryRule(), ServiceRuntimeRule(),
+        PlatformCheckSummaryRule(), DeviceLoadSummaryRule(), FirmwareDownloadRule(),
+        ConfigurationInventorySummaryRule(),
+    ]
 
 
 def tls_policy_from_args(args: argparse.Namespace) -> TlsPolicy:

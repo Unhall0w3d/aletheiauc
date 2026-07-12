@@ -59,6 +59,13 @@ class ConfigTests(unittest.TestCase):
                 AssessmentTarget("PRIMARY", "cuc", "two"),
             ))
 
+    def test_assessment_profile_rejects_shared_connection_credentials(self) -> None:
+        with self.assertRaises(ValueError):
+            AssessmentProfile("invalid", (
+                AssessmentTarget("call-control", "cucm", "shared"),
+                AssessmentTarget("voicemail", "cuc", "shared"),
+            ))
+
     def test_ip_publisher_is_accepted_without_resolution(self) -> None:
         self.assertEqual(resolve_publisher("192.0.2.10"), "192.0.2.10")
 

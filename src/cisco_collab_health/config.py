@@ -93,6 +93,11 @@ class AssessmentProfile:
         ids = [target.target_id.lower() for target in self.targets]
         if len(ids) != len(set(ids)):
             raise ValueError("Assessment target IDs must be unique within a profile.")
+        connection_profiles = [target.connection_profile.lower() for target in self.targets]
+        if len(connection_profiles) != len(set(connection_profiles)):
+            raise ValueError(
+                "Each assessment target must use a distinct connection profile."
+            )
 
 
 def resolve_publisher(value: str) -> str:

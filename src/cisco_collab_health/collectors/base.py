@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from dataclasses import replace
 from typing import Protocol
 
 from cisco_collab_health.models.evidence import EvidenceRef
@@ -35,7 +36,54 @@ class CollectionResult:
 class Collector(Protocol):
     """Protocol implemented by all fact collectors."""
 
-    name: str
+    @property
+    def name(self) -> str:
+        """Stable collector name used in evidence and status output."""
 
     def collect(self, context: CollectionContext) -> CollectionResult:
         """Collect facts from a Cisco Collaboration source."""
+
+
+@dataclass(frozen=True)
+class TargetPipelineCollector:
+    """Run a target's collectors with isolated discovery state and credentials."""
+
+    target_id: str
+    technology: str
+    collectors: tuple[Collector, ...]
+    target_context: CollectionContext
+
+    @property
+    def name(self) -> str:
+        return f"{self.target_id}[{self.technology}]"
+
+    def collect(self, context: CollectionContext) -> CollectionResult:
+        del context
+        facts = AssessmentFacts()
+        warnings: list[str] = []
+        errors: list[CollectorError] = []
+        evidence: list[EvidenceRef] = []
+        notes: list[str] = []
+        flags: list[str] = []
+        target_context = self.target_context
+        for collector in self.collectors:
+            result = collector.collect(target_context)
+            facts.merge(result.facts)
+            warnings.extend(f"{collector.name}: {item}" for item in result.warnings)
+            errors.extend(result.errors)
+            evidence.extend(result.evidence)
+            notes.extend(f"{collector.name}: {item}" for item in result.notes)
+            flags.extend(result.status_flags)
+            target_context = replace(
+                target_context,
+                discovered_nodes=tuple(dict.fromkeys(
+                    node.address or node.name for node in facts.nodes
+                )),
+                discovered_device_names=tuple(dict.fromkeys(
+                    device.name for device in facts.devices if device.name
+                )),
+            )
+        return CollectionResult(
+            collector_name=self.name, facts=facts, warnings=warnings, errors=errors,
+            evidence=evidence, notes=notes, status_flags=flags,
+        )

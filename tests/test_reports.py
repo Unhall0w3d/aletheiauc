@@ -52,6 +52,25 @@ class ReportBuilderTests(unittest.TestCase):
             display_source("ControlCenter.soapGetServiceStatus"),
             "Control Center – Service status",
         )
+
+    def test_multi_target_scope_is_visible_in_html_and_summary(self) -> None:
+        report = AssessmentReport(
+            facts=self.report.facts, collector_results=self.report.collector_results,
+            findings=self.report.findings,
+            runtime_metadata={"targets": [
+                {"target_id": "call-control", "technology": "cucm",
+                 "address": "192.0.2.10", "connection_profile": "cucm-lab"},
+                {"target_id": "voicemail", "technology": "cuc",
+                 "address": "192.0.2.20", "connection_profile": "cuc-lab"},
+            ]},
+        )
+
+        html = HtmlReportBuilder().build(report)
+        summary = ExecutiveSummaryBuilder().build(report)
+
+        self.assertIn("Assessment Targets", html)
+        self.assertIn("voicemail", html)
+        self.assertIn("Assessment targets: 2", summary)
         self.assertEqual(
             display_source("AXL.listPhone.summary, AXL.listDevicePool"),
             "AXL – Phone inventory; AXL – Device pool",

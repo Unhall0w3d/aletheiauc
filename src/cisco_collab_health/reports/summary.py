@@ -27,6 +27,16 @@ class ExecutiveSummaryBuilder:
             "=================",
             "",
         ]
+        targets = report.runtime_metadata.get("targets")
+        if isinstance(targets, list) and targets:
+            lines.append(f"Assessment targets: {len(targets)}")
+            for target in targets:
+                if isinstance(target, dict):
+                    lines.append(
+                        f"- {target.get('target_id', 'unknown')}: "
+                        f"{str(target.get('technology', 'unknown')).upper()}"
+                    )
+            lines.append("")
 
         if report.facts.cluster is not None:
             cluster = report.facts.cluster
@@ -39,6 +49,8 @@ class ExecutiveSummaryBuilder:
             )
         else:
             lines.append("Cluster: unknown")
+        if len(report.facts.clusters) > 1:
+            lines.append(f"Clusters assessed: {len(report.facts.clusters)}")
 
         lines.extend(
             [

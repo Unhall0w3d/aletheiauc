@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from cisco_collab_health.collectors.base import CollectionContext
+from cisco_collab_health.collectors.base import CollectionContext, TargetPipelineCollector
 from cisco_collab_health.collectors.sample import SampleCollector
 from cisco_collab_health.collectors.base import CollectionResult
 from cisco_collab_health.engine import AssessmentEngine
@@ -58,6 +58,22 @@ class ContextRecordingCollector:
 
 
 class AssessmentEngineTests(unittest.TestCase):
+    def test_target_pipeline_keeps_discovery_inside_target_context(self) -> None:
+        recorder = ContextRecordingCollector()
+        pipeline = TargetPipelineCollector(
+            target_id="call-control", technology="cucm",
+            collectors=(NodeCollector(), recorder),
+            target_context=CollectionContext(
+                product="cucm", publisher_ip="192.0.2.10", gui_username="cucm-admin",
+            ),
+        )
+
+        result = pipeline.collect(CollectionContext(product="multi"))
+
+        self.assertEqual(result.collector_name, "call-control[cucm]")
+        self.assertEqual(recorder.discovered_nodes, ("192.0.2.10",))
+        self.assertEqual(len(result.facts.nodes), 1)
+
     def test_sample_assessment_runs_end_to_end(self) -> None:
         engine = AssessmentEngine(
             collectors=[SampleCollector()],

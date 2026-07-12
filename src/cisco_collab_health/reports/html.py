@@ -39,6 +39,7 @@ class HtmlReportBuilder:
             len(result.evidence) for result in report.collector_results
         )
         methodology_scope_section = self._methodology_scope_section(report)
+        target_scope_section = self._target_scope_section(report)
         cluster_section = self._cluster_section(report)
         node_rows = self._node_rows(report)
         device_rows = self._device_rows(report)
@@ -243,6 +244,7 @@ class HtmlReportBuilder:
       </div>
     </section>
     {methodology_scope_section}
+    {target_scope_section}
     {coverage_section}
     {cluster_section}
     <section>
@@ -1012,6 +1014,31 @@ class HtmlReportBuilder:
             '<p class="meta"><strong>CPU percentage unavailable:</strong> all collected CPU '
             'percentage samples were zero. The raw counters are retained, but this report '
             'does not interpret them as actual zero utilization.</p>'
+        )
+
+    def _target_scope_section(self, report: AssessmentReport) -> str:
+        targets = report.runtime_metadata.get("targets")
+        if not isinstance(targets, list) or not targets:
+            return ""
+        rows = []
+        for target in targets:
+            if not isinstance(target, dict):
+                continue
+            address = "Omitted" if self.customer_safe else display_text(target.get("address"))
+            profile = "Omitted" if self.customer_safe else display_text(target.get("connection_profile"))
+            rows.append(
+                "<tr>"
+                f"<td>{escape(display_text(target.get('target_id')))}</td>"
+                f"<td>{escape(display_text(target.get('technology')).upper())}</td>"
+                f"<td>{escape(address)}</td><td>{escape(profile)}</td>"
+                "</tr>"
+            )
+        return (
+            "<section><h2>Assessment Targets</h2>"
+            "<p class=\"meta\">Each target uses an independent connection and credential profile.</p>"
+            "<div class=\"table-scroll\"><table><thead><tr><th>Target</th><th>Technology</th>"
+            "<th>Address</th><th>Connection Profile</th></tr></thead><tbody>"
+            + "".join(rows) + "</tbody></table></div></section>"
         )
 
     def _configuration_summary_rows(self, report: AssessmentReport) -> str:

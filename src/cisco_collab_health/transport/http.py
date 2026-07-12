@@ -150,8 +150,9 @@ class CapturedHttpClient:
         if context.artifact_store is None:
             return None, None
         store = cast(ArtifactStore, context.artifact_store)
+        artifact_node = f"{context.target_id}--{node}" if context.target_id else node
         paths = store.write_api_exchange(
-            node,
+            artifact_node,
             interface,
             operation,
             request=request,
@@ -160,6 +161,7 @@ class CapturedHttpClient:
         store.record_operation_attempt(
             {
                 "interface": interface,
+                "target_id": context.target_id,
                 "operation": operation,
                 "artifact_operation": operation,
                 "node": node,

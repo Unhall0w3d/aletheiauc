@@ -10,6 +10,16 @@ from cisco_collab_health import cli
 
 
 class CliTests(unittest.TestCase):
+    def test_multi_target_arguments_are_repeatable(self) -> None:
+        args = cli.build_parser().parse_args([
+            "--assessment-profile", "district",
+            "--assessment-target", "call-control:cucm:YorktownCSD",
+            "--assessment-target", "voicemail:cuc:YorktownCUC",
+        ])
+
+        self.assertEqual(args.assessment_profile, "district")
+        self.assertEqual(len(args.assessment_target), 2)
+
     def test_review_zip_requires_troubleshooting_logs(self) -> None:
         with self.assertRaises(SystemExit) as exc:
             cli.main(

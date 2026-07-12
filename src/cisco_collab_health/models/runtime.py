@@ -15,6 +15,7 @@ class CollectionContext:
     target: str | None = None
     username: str | None = None
     product: str = "cucm"
+    target_id: str | None = None
     publisher_ip: str | None = None
     gui_username: str | None = None
     gui_password: str | None = field(default=None, repr=False)

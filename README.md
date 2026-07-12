@@ -413,8 +413,28 @@ Multi-technology migration has started with an assessment-profile model. An
 assessment profile groups named targets such as `call-control` and `voicemail`;
 each target references its own connection profile and therefore its own GUI/API
 and Platform/SSH credentials. Group files contain no passwords. Existing
-single-target commands remain supported while combined orchestration and a
-single consolidated report are completed.
+single-target commands remain supported alongside combined orchestration and
+consolidated reporting.
+
+Create or replace a combined assessment profile and run it:
+
+```bash
+./aletheiauc.py --assessment-profile District \
+  --assessment-target call-control:cucm:YorktownCSD \
+  --assessment-target voicemail:cuc:YorktownCUC \
+  --diagnostic-capture --export-review-zip
+```
+
+Later runs can reuse the saved composition without repeating targets:
+
+```bash
+./aletheiauc.py --assessment-profile District --diagnostic-capture --export-review-zip
+```
+
+Targets execute with isolated credentials, discovery state, and artifact
+namespaces. Their facts, evidence, findings, and coverage are rendered into one
+HTML/JSON assessment and one review ZIP. A failure on one target is recorded
+without preventing other target pipelines from completing.
 
 This option affects HTML presentation only. Raw artifacts, troubleshooting
 logs, and normalized JSON remain private diagnostic output and can contain

@@ -177,6 +177,7 @@ class AssessmentFacts:
     """Container for normalized assessment facts."""
 
     cluster: ClusterIdentity | None = None
+    clusters: list[ClusterIdentity] = field(default_factory=list)
     nodes: list[CollaborationNode] = field(default_factory=list)
     devices: list[DeviceInventoryFact] = field(default_factory=list)
     device_load_defaults: list[DeviceLoadDefaultFact] = field(default_factory=list)
@@ -214,8 +215,18 @@ class AssessmentFacts:
     def merge(self, other: "AssessmentFacts") -> None:
         """Merge another facts object into this one."""
 
+        incoming_clusters = [*other.clusters]
         if other.cluster is not None:
-            self.cluster = other.cluster
+            incoming_clusters.insert(0, other.cluster)
+        for cluster in incoming_clusters:
+            if not any(
+                existing.name.lower() == cluster.name.lower()
+                and existing.product.lower() == cluster.product.lower()
+                for existing in self.clusters
+            ):
+                self.clusters.append(cluster)
+        if self.cluster is None and incoming_clusters:
+            self.cluster = incoming_clusters[0]
         for node in other.nodes:
             self.add_node(node)
         _merge_by_key(self.devices, other.devices, _device_inventory_key, _merge_device_inventory)
