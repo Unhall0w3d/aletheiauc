@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from cisco_collab_health.collectors.base import CollectionResult
-from cisco_collab_health.models.facts import AssessmentFacts, PlatformCheckFact
+from cisco_collab_health.models.facts import AssessmentFacts, ClusterIdentity, PlatformCheckFact
 from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.transport.ssh import SshCommandResult, SshCommandTimeout, UcosSshSession
 
@@ -60,6 +60,7 @@ class CucPlatformCollector:
     def collect(self, context: CollectionContext) -> CollectionResult:
         facts = AssessmentFacts()
         warnings: list[str] = []
+        version: str | None = None
         node = context.publisher_ip or context.target
         if not node:
             return CollectionResult(self.name, facts, warnings=["CUC target is missing."])
@@ -100,6 +101,8 @@ class CucPlatformCollector:
                         continue
                     if context.artifact_store is not None:
                         context.artifact_store.write_command_output(node, command, result.output)
+                    if command == "show version active":
+                        version = _cuc_version(result.output)
                     facts.platform_checks.append(
                         PlatformCheckFact(
                             node=node,
@@ -119,6 +122,8 @@ class CucPlatformCollector:
                     )
         except Exception as exc:
             warnings.append(f"CUC SSH session failed: {exc}")
+        if version:
+            facts.cluster = ClusterIdentity(node, "Cisco Unity Connection", version)
         return CollectionResult(self.name, facts, warnings=warnings)
 
 
@@ -154,3 +159,8 @@ def _cuc_cli_summary(command: str, output: str) -> dict[str, str]:
             "duplicate_ip": duplicate.group(1).lower() if duplicate else "unknown",
         }
     return {}
+
+
+def _cuc_version(output: str) -> str | None:
+    match = re.search(r"(?im)^Active Master Version:\s*(\S+)", output)
+    return match.group(1) if match else None

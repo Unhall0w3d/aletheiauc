@@ -12,6 +12,7 @@ from cisco_collab_health.collectors.cuc_platform import (
     CUC_SAFE_CLI_COMMANDS,
     CucPlatformCollector,
     _cuc_cli_summary,
+    _cuc_version,
 )
 from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.transport.ssh import SshCommandResult, SshCommandTimeout
@@ -50,6 +51,7 @@ class CucPlatformCollectorTests(unittest.TestCase):
             "1",
         )
         self.assertEqual(_cuc_cli_summary("utils core active list", "No core files found")["core_files"], "0")
+        self.assertEqual(_cuc_version("Active Master Version: 15.0.1.12900-43"), "15.0.1.12900-43")
 
     def test_collector_records_only_safe_commands_and_artifacts(self) -> None:
         commands: list[str] = []

@@ -223,14 +223,29 @@ class AssessmentFacts:
         if other.cluster is not None:
             incoming_clusters.insert(0, other.cluster)
         for cluster in incoming_clusters:
-            if not any(
-                existing.name.lower() == cluster.name.lower()
+            matching_index = next((
+                index for index, existing in enumerate(self.clusters)
+                if existing.name.lower() == cluster.name.lower()
                 and existing.product.lower() == cluster.product.lower()
-                for existing in self.clusters
-            ):
+            ), None)
+            if matching_index is None:
                 self.clusters.append(cluster)
+            elif self.clusters[matching_index].version == "unknown" and cluster.version != "unknown":
+                self.clusters[matching_index] = cluster
         if self.cluster is None and incoming_clusters:
             self.cluster = incoming_clusters[0]
+        elif self.cluster is not None and self.cluster.version == "unknown":
+            replacement = next(
+                (
+                    cluster for cluster in incoming_clusters
+                    if cluster.name.lower() == self.cluster.name.lower()
+                    and cluster.product.lower() == self.cluster.product.lower()
+                    and cluster.version != "unknown"
+                ),
+                None,
+            )
+            if replacement is not None:
+                self.cluster = replacement
         for node in other.nodes:
             self.add_node(node)
         _merge_by_key(self.devices, other.devices, _device_inventory_key, _merge_device_inventory)
