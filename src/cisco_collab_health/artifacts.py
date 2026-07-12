@@ -7,6 +7,7 @@ traceability. They should not contain reusable credentials.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -15,6 +16,9 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, TextIO
+
+_PRIVATE_DIRECTORY_MODE = 0o700
+_PRIVATE_FILE_MODE = 0o600
 
 
 class ArtifactRedactionMode(str, Enum):
@@ -44,7 +48,7 @@ class ArtifactStore:
         run_time = started_at or datetime.now()
         run_id = run_time.strftime("%Y%m%d-%H%M%S")
         root = Path(root_dir).expanduser() / _safe_name(profile_name) / run_id
-        root.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(root)
         return cls(
             root=root,
             run_id=run_id,
@@ -62,17 +66,19 @@ class ArtifactStore:
 
     def write_json(self, relative_path: str | Path, payload: Any) -> Path:
         path = self.root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(path.parent)
         path.write_text(
             json.dumps(_to_jsonable(payload), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        _make_private(path)
         return path
 
     def write_text(self, relative_path: str | Path, content: str) -> Path:
         path = self.root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(path.parent)
         path.write_text(content, encoding="utf-8")
+        _make_private(path)
         return path
 
     def write_node_json(self, node: str, category: str, filename: str, payload: Any) -> Path:
@@ -113,16 +119,17 @@ class ArtifactStore:
 
     def write_command_output(self, node: str, command: str, output: str) -> Path:
         filename = f"{_safe_name(command)}.txt"
-        content = f"$ {command}\n\n{output.rstrip()}\n"
+        content = f"$ {command}\n\n{_sanitize_artifact_text(output, self.redaction_mode).rstrip()}\n"
         return self.write_node_text(node, "cli", filename, content)
 
     def record_operation_attempt(self, payload: dict[str, Any]) -> Path:
         """Append one API/HTTP attempt to the run diagnostic manifest."""
 
         path = self.root / "operation_attempts.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(path.parent)
         with path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(_to_jsonable(payload), sort_keys=True) + "\n")
+        _make_private(path)
         return path
 
 
@@ -144,7 +151,7 @@ class RunLogStore:
         run_time = started_at or datetime.now()
         run_id = run_time.strftime("%Y%m%d-%H%M%S")
         root = Path(root_dir).expanduser() / run_id
-        root.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(root)
         return cls(root=root, run_id=run_id, profile_name=profile_name)
 
     @property
@@ -152,8 +159,10 @@ class RunLogStore:
         return self.root / "run.log"
 
     def open_run_log(self) -> TextIO:
-        self.root.mkdir(parents=True, exist_ok=True)
-        return self.run_log_path.open("a", encoding="utf-8")
+        _create_private_directory(self.root)
+        stream = self.run_log_path.open("a", encoding="utf-8")
+        _make_private(self.run_log_path)
+        return stream
 
     def write_manifest(self, metadata: dict[str, Any]) -> Path:
         payload = {
@@ -165,30 +174,33 @@ class RunLogStore:
 
     def write_json(self, relative_path: str | Path, payload: Any) -> Path:
         path = self.root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(path.parent)
         path.write_text(
             json.dumps(_to_jsonable(payload), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        _make_private(path)
         return path
 
     def write_text(self, relative_path: str | Path, content: str) -> Path:
         path = self.root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(path.parent)
         path.write_text(content, encoding="utf-8")
+        _make_private(path)
         return path
 
     def copy_file(self, source: Path, relative_path: str | Path) -> Path:
         destination = self.root / relative_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(destination.parent)
         shutil.copy2(source, destination)
+        _make_private(destination)
         return destination
 
     def copy_artifact_tree(self, source_root: Path, relative_path: str | Path) -> Path:
         """Copy one run's raw and normalized artifacts into the log bundle."""
 
         destination = self.root / relative_path
-        destination.mkdir(parents=True, exist_ok=True)
+        _create_private_directory(destination)
         if not source_root.exists():
             return destination
 
@@ -196,8 +208,9 @@ class RunLogStore:
             if not source.is_file():
                 continue
             target = destination / source.relative_to(source_root)
-            target.parent.mkdir(parents=True, exist_ok=True)
+            _create_private_directory(target.parent)
             shutil.copy2(source, target)
+            _make_private(target)
         return destination
 
 
@@ -225,7 +238,9 @@ def export_review_zip(
                         path,
                         arcname=Path("logs") / store.run_id / path.relative_to(store.root),
                     )
+        _make_private(temporary_path)
         temporary_path.replace(zip_path)
+        _make_private(zip_path)
     except Exception:
         temporary_path.unlink(missing_ok=True)
         raise
@@ -321,12 +336,35 @@ def _redact_secret_values(content: str) -> str:
         lambda match: f"{match.group(1)}: <redacted>",
         content,
     )
-    return re.sub(
+    content = re.sub(
         r"(<[^>]*(?:password|passwd|secret|token)[^>]*>)(.*?)(</[^>]+>)",
         r"\1<redacted>\3",
         content,
         flags=re.IGNORECASE | re.DOTALL,
     )
+    content = re.sub(
+        r"(?i)(\b(?:password|passwd|secret|token|api[_-]?key)\b\s*[=:]\s*)([^\s,;]+)",
+        r"\1<redacted>",
+        content,
+    )
+    content = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer <redacted>", content)
+    content = re.sub(r"(?i)(https?://)[^/@\s:]+:[^/@\s]+@", r"\1<redacted>@", content)
+    return re.sub(
+        r"(?is)-----BEGIN [^-]*PRIVATE KEY-----.+?-----END [^-]*PRIVATE KEY-----",
+        "<redacted private key>",
+        content,
+    )
+
+
+def _create_private_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    if os.name == "posix":
+        path.chmod(_PRIVATE_DIRECTORY_MODE)
+
+
+def _make_private(path: Path) -> None:
+    if os.name == "posix" and path.exists():
+        path.chmod(_PRIVATE_FILE_MODE)
 
 
 def _collector_warnings(report: Any) -> list[dict[str, Any]]:

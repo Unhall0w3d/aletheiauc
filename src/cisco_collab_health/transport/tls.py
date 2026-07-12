@@ -11,7 +11,7 @@ from pathlib import Path
 class TlsPolicy:
     """TLS verification behavior for HTTPS probes and collectors."""
 
-    verify: bool = False
+    verify: bool = True
     ca_bundle: Path | None = None
 
 

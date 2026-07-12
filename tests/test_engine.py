@@ -79,6 +79,26 @@ class AssessmentEngineTests(unittest.TestCase):
         self.assertEqual(result.facts.nodes[0].technology, "cucm")
         self.assertEqual(result.facts.nodes[0].target_id, "call-control")
 
+    def test_target_pipeline_continues_after_recoverable_child_failure(self) -> None:
+        recorder = ContextRecordingCollector()
+        pipeline = TargetPipelineCollector(
+            target_id="voice-mail",
+            technology="cuc",
+            collectors=(NodeCollector(), BrokenCollector(), recorder),
+            target_context=CollectionContext(product="cuc", publisher_ip="192.0.2.20"),
+        )
+
+        result = pipeline.collect(CollectionContext(product="multi"))
+
+        self.assertEqual(recorder.discovered_nodes, ("192.0.2.10",))
+        self.assertEqual(len(result.errors), 1)
+        error = result.errors[0]
+        self.assertEqual(error.collector_name, "broken")
+        self.assertEqual(error.target_id, "voice-mail")
+        self.assertEqual(error.technology, "cuc")
+        self.assertEqual(error.exception_type, "RuntimeError")
+        self.assertEqual(len(result.facts.nodes), 1)
+
     def test_sample_assessment_runs_end_to_end(self) -> None:
         engine = AssessmentEngine(
             collectors=[SampleCollector()],

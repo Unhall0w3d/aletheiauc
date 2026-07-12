@@ -62,10 +62,13 @@ class UcosSshSession:
             self.client = paramiko.SSHClient()
             self.client.load_system_host_keys()
             known_hosts = Path.home() / ".ssh" / "known_hosts"
-            known_hosts.parent.mkdir(parents=True, exist_ok=True)
             if known_hosts.exists():
                 self.client.load_host_keys(str(known_hosts))
-            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            if self.context.accept_new_host_key:
+                known_hosts.parent.mkdir(parents=True, exist_ok=True)
+                self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            else:
+                self.client.set_missing_host_key_policy(paramiko.RejectPolicy())
         else:
             self.client = self.client_factory()
         self.client.connect(
@@ -78,7 +81,7 @@ class UcosSshSession:
             look_for_keys=False,
             allow_agent=False,
         )
-        if self.client_factory is None:
+        if self.client_factory is None and self.context.accept_new_host_key:
             self.client.save_host_keys(str(Path.home() / ".ssh" / "known_hosts"))
         transport = self.client.get_transport()
         if transport is None:

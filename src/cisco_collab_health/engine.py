@@ -6,11 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import replace
 
-from cisco_collab_health.collectors.base import (
-    CollectionResult,
-    Collector,
-    CollectorError,
-)
+from cisco_collab_health.collectors.base import Collector, collect_safely
 from cisco_collab_health.models.assessment import AssessmentReport
 from cisco_collab_health.models.facts import AssessmentFacts, CollectorIssueFact
 from cisco_collab_health.models.runtime import CollectionContext
@@ -30,19 +26,7 @@ class AssessmentEngine:
         collector_results = []
 
         for collector in self.collectors:
-            try:
-                result = collector.collect(collection_context)
-            except Exception as exc:
-                result = CollectionResult(
-                    collector_name=getattr(collector, "name", collector.__class__.__name__),
-                    facts=AssessmentFacts(),
-                    errors=[
-                        CollectorError(
-                            message=str(exc),
-                            exception_type=exc.__class__.__name__,
-                        )
-                    ],
-                )
+            result = collect_safely(collector, collection_context)
             collector_results.append(result)
             facts.merge(result.facts)
             discovered_nodes = tuple(

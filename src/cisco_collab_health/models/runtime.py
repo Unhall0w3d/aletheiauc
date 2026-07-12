@@ -22,6 +22,7 @@ class CollectionContext:
     os_username: str | None = None
     os_password: str | None = field(default=None, repr=False)
     timeout_seconds: int = 30
+    accept_new_host_key: bool = False
     artifact_store: Any | None = field(default=None, repr=False)
     tls: TlsPolicy = field(default_factory=TlsPolicy)
     axl_port: int = 8443

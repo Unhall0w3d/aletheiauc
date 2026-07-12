@@ -59,6 +59,7 @@ def run_assessment(
     context = CollectionContext(
         product=args.product,
         tls=tls_policy,
+        accept_new_host_key=args.accept_new_host_key,
         collect_phone_inventory=args.collect_phone_inventory,
         phone_inventory_page_size=args.phone_inventory_page_size,
         phone_inventory_max_devices=args.phone_inventory_max_devices,
@@ -104,6 +105,7 @@ def run_assessment(
             diagnostic_axl_page_size=args.diagnostic_axl_page_size,
             diagnostic_axl_max_records=args.diagnostic_axl_max_records,
             tls=tls_policy,
+            accept_new_host_key=args.accept_new_host_key,
         )
         artifact_store = _create_artifact_store(args, status, profile_name, run_started)
         context = replace(context, artifact_store=artifact_store)
@@ -319,6 +321,7 @@ def run_multi_assessment(
             diagnostic_axl_max_records=args.diagnostic_axl_max_records,
             tls=tls_policy,
             artifact_store=artifact_store,
+            accept_new_host_key=args.accept_new_host_key,
         )
         preflight = None
         if target.technology == "cucm":
@@ -451,7 +454,7 @@ def _assessment_rules() -> list[HealthRule]:
 
 
 def tls_policy_from_args(args: argparse.Namespace) -> TlsPolicy:
-    verify = bool(args.verify_tls and not args.insecure)
+    verify = not args.insecure
     ca_bundle = Path(args.ca_bundle).expanduser() if args.ca_bundle else None
     return TlsPolicy(verify=verify, ca_bundle=ca_bundle)
 

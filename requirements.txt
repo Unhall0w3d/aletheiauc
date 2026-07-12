@@ -1,4 +1,4 @@
-keyring>=25
-defusedxml>=0.7
-cryptography>=44
-paramiko>=3.4
+# Runtime dependency metadata is authoritative in pyproject.toml.
+# This legacy convenience file intentionally installs the local project rather
+# than maintaining a second, drift-prone dependency list.
+.

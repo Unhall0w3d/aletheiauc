@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -118,6 +119,36 @@ class ArtifactStoreTests(unittest.TestCase):
             request_text = request.read_text(encoding="utf-8")
 
         self.assertIn("Authorization: Basic abc123", request_text)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions are platform-specific")
+    def test_created_artifacts_and_logs_are_private(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            store = ArtifactStore.create(root / "assessment_runs", "lab")
+            artifact = store.write_command_output("192.0.2.10", "show status", "ok")
+            log_store = RunLogStore.create(root / "logs", "lab")
+            log = log_store.write_text("run.log", "ok\n")
+
+            self.assertEqual(store.root.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(artifact.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(log_store.root.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
+    def test_cli_output_uses_the_configured_secret_redaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = ArtifactStore.create(Path(tmpdir), "lab")
+            output = store.write_command_output(
+                "192.0.2.10",
+                "show status",
+                "password=hidden\nAuthorization: Bearer abc123\n"
+                "-----BEGIN PRIVATE KEY-----\nprivate\n-----END PRIVATE KEY-----",
+            )
+
+            content = output.read_text(encoding="utf-8")
+
+        self.assertNotIn("hidden", content)
+        self.assertNotIn("abc123", content)
+        self.assertNotIn("\nprivate\n", content)
 
     def test_log_bundle_contains_summary_report_and_artifact_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
