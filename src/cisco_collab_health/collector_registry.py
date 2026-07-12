@@ -7,6 +7,7 @@ from cisco_collab_health.collectors.base import Collector
 from cisco_collab_health.collectors.diagnostic import DiagnosticCaptureCollector
 from cisco_collab_health.collectors.sample import SampleCollector
 from cisco_collab_health.collectors.cuc import CucCollector
+from cisco_collab_health.collectors.cuc_platform import CucPlatformCollector
 from cisco_collab_health.interfaces import PreflightResult
 
 
@@ -22,7 +23,10 @@ def select_collectors(
     if smoke_test:
         return [SampleCollector()]
     if product == "cuc":
-        return [CucCollector()]
+        cuc_collectors: list[Collector] = [CucCollector(diagnostic_capture=diagnostic_capture)]
+        if diagnostic_capture:
+            cuc_collectors.append(CucPlatformCollector())
+        return cuc_collectors
     if preflight is None:
         return []
 
@@ -30,7 +34,5 @@ def select_collectors(
     if "axl" in preflight.transport_available_interfaces:
         collectors.append(AxlCollector())
     if diagnostic_capture:
-        collectors.append(
-            DiagnosticCaptureCollector(preflight.transport_available_interfaces)
-        )
+        collectors.append(DiagnosticCaptureCollector(preflight.transport_available_interfaces))
     return collectors

@@ -418,6 +418,17 @@ CUC profile:
 
 The initial CUC collector requests one user row from `/vmrest/users`, records
 the aggregate total and raw exchange, and does not collect mailbox identities.
+When diagnostic capture is enabled, it also uses one-row, read-only CUPI probes
+for contacts, distribution lists, call handlers, classes of service, and system
+configuration values. Raw responses are retained in the private review bundle;
+the normalized report records counts only.
+
+The same diagnostic mode runs the following read-only Unity Connection UCOS SSH
+commands when the platform account and `paramiko` dependency are available:
+`show status`, `show version`, `show network`, `show memory`, `show hardware`,
+and `utils service list`. Each output is retained as a command artifact for
+offline review. SSH host keys must already be trusted by the local system; the
+collector deliberately does not accept unknown host keys.
 CUCM remains the default product. CUC Platform credentials are stored through
 the existing encrypted OS/SSH credential path for upcoming CLI collection.
 

@@ -24,11 +24,28 @@ class CucCollectorTests(unittest.TestCase):
         self.assertEqual(_cupi_total('{"total": 7}'), 7)
 
     def test_collector_captures_bounded_mailbox_inventory(self) -> None:
-        result = CucCollector(http_client=FakeHttpClient()).collect(CollectionContext(
-            product="cuc", publisher_ip="192.0.2.20",
-            gui_username="admin", gui_password="secret",
-        ))
+        result = CucCollector(http_client=FakeHttpClient()).collect(
+            CollectionContext(
+                product="cuc",
+                publisher_ip="192.0.2.20",
+                gui_username="admin",
+                gui_password="secret",
+            )
+        )
 
         self.assertEqual(result.facts.cluster.product, "Cisco Unity Connection")
         self.assertEqual(result.facts.configuration_objects[0].details["total"], "42")
         self.assertEqual(len(result.evidence), 1)
+
+    def test_diagnostic_capture_collects_bounded_cupi_inventory_counts(self) -> None:
+        result = CucCollector(http_client=FakeHttpClient(), diagnostic_capture=True).collect(
+            CollectionContext(product="cuc", publisher_ip="192.0.2.20")
+        )
+
+        self.assertEqual(len(result.facts.configuration_objects), 6)
+        self.assertEqual(len(result.evidence), 6)
+        self.assertTrue(
+            all(
+                item.details["requested_rows"] == "1" for item in result.facts.configuration_objects
+            )
+        )
