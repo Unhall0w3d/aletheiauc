@@ -99,7 +99,7 @@ class HtmlReportBuilder:
         hero_image = (
             _comsource_asset_data_uri("comsource-cover-network.svg")
             if is_comsource
-            else _aletheiauc_asset_data_uri("aletheiauc-report-hero.png")
+            else _aletheiauc_asset_data_uri("aletheiauc-report-emblem.png")
         )
         divider_image = (
             _comsource_asset_data_uri("comsource-divider.svg")
@@ -115,7 +115,7 @@ class HtmlReportBuilder:
             else ""
         )
         logo_image = _comsource_asset_data_uri("ComSource_Logo.svg") if is_comsource else ""
-        emblem_image = "" if is_comsource else _aletheiauc_asset_data_uri("aletheiauc-report-emblem.png")
+        emblem_image = "" if is_comsource else hero_image
         template_css = (
             self._comsource_css()
             if is_comsource
@@ -931,7 +931,13 @@ class HtmlReportBuilder:
       margin: 0;
     }
     .aletheiauc-report .meta-chip { background: rgba(5, 8, 18, .55); backdrop-filter: blur(5px); }
-    .aletheiauc-report .visual-divider { height: 58px; margin: 0; background-size: 100% 100%; opacity: .9; }
+    .aletheiauc-report .visual-divider {
+      height: clamp(110px, 10vw, 155px);
+      margin: 0;
+      background-size: cover;
+      background-position: center;
+      opacity: .9;
+    }
     .aletheiauc-report main { display: grid; gap: 25px; }
     .aletheiauc-report main > section { margin: 0; }
     .aletheiauc-report .section-heading {
@@ -2568,9 +2574,15 @@ def _source_caption(section_name: str, report: AssessmentReport) -> str:
         "Device Load Summary": "Source: AXL phone inventory and bounded Device Defaults SQL.",
         "Detailed Device Inventory": detailed_inventory_caption,
     }
+    registration_caption = "Source: RISPort70 SelectCmDeviceExt normalized runtime records."
+    if any(registration.source == "RISPort70.selectCmDevice" for registration in report.facts.registrations):
+        registration_caption = (
+            "Source: RISPort70 SelectCmDeviceExt phone detail and SelectCmDevice "
+            "all-device-class runtime records."
+        )
     collected_sections = {
-        "Device Registration Summary": "Source: RISPort70 SelectCmDeviceExt normalized runtime records.",
-        "Detailed Device Registration": "Source: RISPort70 SelectCmDeviceExt normalized runtime records.",
+        "Device Registration Summary": registration_caption,
+        "Detailed Device Registration": registration_caption,
         "Services": "Source: Control Center Services normalized service records.",
         "Performance Counters": "Source: PerfMon normalized performance-counter records.",
         "Platform Checks": "Source: SSH/CLI fallback. Real collector not implemented yet.",

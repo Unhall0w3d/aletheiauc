@@ -298,6 +298,30 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("Yes (data collected)", html)
         self.assertIn("Not assessed directly", html)
 
+    def test_registration_caption_identifies_supplemental_all_class_query(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                registrations=[
+                    DeviceRegistrationFact(
+                        name="SIPTRUNK-1",
+                        status="Registered",
+                        registered_node="cucm-pub",
+                        ip_address="192.0.2.30",
+                        model="SIP Trunk",
+                        protocol="SIP",
+                        source="RISPort70.selectCmDevice",
+                        device_class="SIPTrunk",
+                    )
+                ]
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        html = HtmlReportBuilder().build(report)
+
+        self.assertIn("SelectCmDeviceExt phone detail and SelectCmDevice", html)
+
     def test_html_report_puts_summaries_before_detailed_device_tables(self) -> None:
         payload = HtmlReportBuilder().build(self.report)
 
