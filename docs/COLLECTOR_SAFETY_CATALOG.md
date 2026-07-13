@@ -24,9 +24,12 @@ misreported as a health failure. CUC command behavior is fixture-tested; exact
 output and runtime require live validation on supported Unity Connection versions.
 
 Normalized diagnostic failures, unexpected stopped services, active core files,
-unhealthy replication state, duplicate IP detection, and link-down state produce
-conservative CUC platform findings. Services explicitly marked not activated are
-reported as inventory state, not treated as failures.
+unhealthy replication state, duplicate IP detection, link-down state, disk usage,
+and long uptime produce conservative CUC platform findings. `show status` raises
+disk warnings at 90% and critical findings at 95%; uptime beyond 365 days is a
+maintenance-planning advisory. Core publisher service policies distinguish
+required services from explicitly inactive services, which are reported as
+inventory state rather than failures.
 
 `show network cluster` also provides bounded, normalized CUC publisher and
 subscriber node facts for the shared cluster-member report table. A prior

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -30,25 +31,13 @@ from cisco_collab_health.reports.json import JsonReportBuilder
 from cisco_collab_health.reports.summary import ExecutiveSummaryBuilder
 from cisco_collab_health.rules.basic import (
     ClusterIdentityRule,
-    CucPlatformHealthRule,
-    CucPlatformStatusRule,
-    CucServicePolicyRule,
-    CertificateValidityRule,
     CollectorHealthRule,
-    ConfigurationInventorySummaryRule,
-    DeviceInventorySummaryRule,
-    DeviceLoadRule,
-    DeviceLoadSummaryRule,
-    FirmwareDownloadRule,
     NodeReachabilityRule,
     PlatformCheckSummaryRule,
-    RegistrationSummaryRule,
-    ServiceSummaryRule,
-    ServiceRuntimeRule,
-    SipTrunkRuntimeRule,
 )
 from cisco_collab_health.rules.base import HealthRule
 from cisco_collab_health.status import StatusPrinter
+from cisco_collab_health.technologies import load_plugins
 from cisco_collab_health.transport.tls import TlsPolicy
 
 
@@ -173,25 +162,7 @@ def run_assessment(
     status.stage("Running collectors")
     engine = AssessmentEngine(
         collectors=collectors,
-        rules=[
-            ClusterIdentityRule(),
-            CucPlatformHealthRule(),
-            CucPlatformStatusRule(),
-            CucServicePolicyRule(),
-            CertificateValidityRule(),
-            NodeReachabilityRule(),
-            CollectorHealthRule(),
-            DeviceLoadRule(),
-            DeviceInventorySummaryRule(),
-            RegistrationSummaryRule(),
-            SipTrunkRuntimeRule(),
-            ServiceSummaryRule(),
-            ServiceRuntimeRule(),
-            PlatformCheckSummaryRule(),
-            DeviceLoadSummaryRule(),
-            FirmwareDownloadRule(),
-            ConfigurationInventorySummaryRule(),
-        ],
+        rules=_assessment_rules((args.product,)),
     )
     report = engine.run(context)
     report = replace(
@@ -392,7 +363,10 @@ def run_multi_assessment(
             }
         )
     status.stage("Running multi-technology collectors")
-    engine = AssessmentEngine(collectors=pipelines, rules=_assessment_rules())
+    engine = AssessmentEngine(
+        collectors=pipelines,
+        rules=_assessment_rules(target.technology for target, _ in targets),
+    )
     report = engine.run(CollectionContext(product="multi", artifact_store=artifact_store))
     report = replace(
         report,
@@ -467,26 +441,16 @@ def run_multi_assessment(
     return 0
 
 
-def _assessment_rules() -> list[HealthRule]:
-    return [
+def _assessment_rules(technologies: Iterable[str]) -> list[HealthRule]:
+    rules: list[HealthRule] = [
         ClusterIdentityRule(),
-        CucPlatformHealthRule(),
-        CucPlatformStatusRule(),
-        CucServicePolicyRule(),
-        CertificateValidityRule(),
         NodeReachabilityRule(),
         CollectorHealthRule(),
-        DeviceLoadRule(),
-        DeviceInventorySummaryRule(),
-        RegistrationSummaryRule(),
-        SipTrunkRuntimeRule(),
-        ServiceSummaryRule(),
-        ServiceRuntimeRule(),
         PlatformCheckSummaryRule(),
-        DeviceLoadSummaryRule(),
-        FirmwareDownloadRule(),
-        ConfigurationInventorySummaryRule(),
     ]
+    for plugin in load_plugins(technologies):
+        rules.extend(plugin.rules())
+    return rules
 
 
 def tls_policy_from_args(args: argparse.Namespace) -> TlsPolicy:

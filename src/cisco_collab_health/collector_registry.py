@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from cisco_collab_health.collectors.axl import AxlCollector
 from cisco_collab_health.collectors.base import Collector
-from cisco_collab_health.collectors.diagnostic import DiagnosticCaptureCollector
-from cisco_collab_health.collectors.sample import SampleCollector
-from cisco_collab_health.collectors.cuc import CucCollector
-from cisco_collab_health.collectors.cuc_platform import CucPlatformCollector
 from cisco_collab_health.interfaces import PreflightResult
+from cisco_collab_health.technologies import load_plugin
 
 
 def select_collectors(
@@ -20,19 +16,11 @@ def select_collectors(
 ) -> list[Collector]:
     """Select collectors for the current runtime mode and preflight result."""
 
-    if smoke_test:
-        return [SampleCollector()]
-    if product == "cuc":
-        cuc_collectors: list[Collector] = [CucCollector(diagnostic_capture=diagnostic_capture)]
-        if diagnostic_capture:
-            cuc_collectors.append(CucPlatformCollector())
-        return cuc_collectors
-    if preflight is None:
+    plugin = load_plugin(product)
+    if plugin is None:
         return []
-
-    collectors: list[Collector] = []
-    if "axl" in preflight.transport_available_interfaces:
-        collectors.append(AxlCollector())
-    if diagnostic_capture:
-        collectors.append(DiagnosticCaptureCollector(preflight.transport_available_interfaces))
-    return collectors
+    return plugin.collectors(
+        preflight,
+        smoke_test=smoke_test,
+        diagnostic_capture=diagnostic_capture,
+    )

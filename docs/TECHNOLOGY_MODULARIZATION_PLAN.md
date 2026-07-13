@@ -41,6 +41,8 @@ artifact retention, report shell, and customer-safe policy.
 
 ## Phase 1: Explicit technology plugins
 
+Status: implemented for the currently supported CUCM and CUC collection paths.
+
 - Replace eager imports in the collector registry with a small manifest keyed by
   technology (`cucm`, `cuc`, `cer`, `imp`).
 - Each plugin exposes its collector factory, applicable rules, report-section
@@ -54,6 +56,9 @@ artifact retention, report shell, and customer-safe policy.
 
 ## Phase 2: Shared UCOS CLI collection
 
+Status: planned. CUC remains the first migration candidate because its command
+catalogue and live artifact coverage are established.
+
 - Extract the prompt-aware session loop, command catalogue model, artifact
   writing, timeout retention, and normalized command-result handling from the
   CUC collector into a technology-neutral UCOS CLI module.
@@ -65,6 +70,10 @@ artifact retention, report shell, and customer-safe policy.
 
 ## Phase 3: Technology-owned facts and rules
 
+Status: partially implemented. CUCM and CUC rule selection is plugin-scoped;
+physical extraction of the existing technology-specific rule classes follows the
+shared CLI extraction.
+
 - Retain cross-technology facts such as nodes, certificates, platform checks,
   and service status in the shared model package.
 - Place CUCM, CUC, CER, and IM&P rule sets in dedicated technology modules.
@@ -75,12 +84,18 @@ artifact retention, report shell, and customer-safe policy.
 
 ## Phase 4: Report composition
 
+Status: planned. Current sections are fact-driven and conditional; plugin-owned
+section providers will be introduced after the collector/parser migration.
+
 - Register report sections through the same technology plugins.
 - Render common sections once and append only the in-scope technology sections.
 - Keep customer-safe behavior at the report-policy layer so each plugin provides
   facts, not separate customer and engineering parsers.
 
 ## Phase 5: Verification and migration
+
+Status: in progress. Plugin-selection tests are required alongside the existing
+single- and multi-target regression suite.
 
 - Add isolated plugin tests and a matrix test for CUCM-only, CUC-only, mixed
   CUCM+CUC, and repeated technology targets.

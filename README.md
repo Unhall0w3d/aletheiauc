@@ -451,8 +451,8 @@ The same diagnostic mode runs the following read-only Unity Connection UCOS SSH
 commands when the platform account and `paramiko` dependency are available:
 `show status`, `show version active`, `show version inactive`, `show hardware`,
 `show network cluster`, `show network eth0 detail`,
-`show perf query class Processor|Memory`, `utils diagnose test`,
-`utils service list`, `utils core active list`, and `show cuc cluster status`.
+`utils diagnose test`, `utils service list`, `utils core active list`, and
+`show cuc cluster status`.
 Each output is retained as a command artifact for offline review. The shared UCOS SSH layer uses a PTY-backed interactive shell
 and waits for the `admin:` prompt after each command; it is intended for CUCM,
 CUC, IM&P, and CER collectors. SSH host keys must already be trusted by the
@@ -461,6 +461,15 @@ the presented key in the user's `~/.ssh/known_hosts`; subsequent connections
 verify that saved key and fail if it changes.
 CUCM remains the default product. CUC Platform credentials are stored through
 the existing encrypted OS/SSH credential path for upcoming CLI collection.
+
+### Technology-scoped loading
+
+Implemented CUCM and CUC technology plugins load their collectors and rules
+only when the selected assessment includes that technology. Shared transport,
+normalized facts, artifacts, and the HTML report shell remain common. This keeps
+CUCM SOAP/API code out of CUC-only runs and CUC CLI code out of CUCM-only runs.
+The staged migration and future report-section ownership are documented in
+[Technology Modularization Plan](docs/TECHNOLOGY_MODULARIZATION_PLAN.md).
 
 Multi-technology migration has started with an assessment-profile model. An
 assessment profile groups named targets such as `call-control` and `voicemail`;
