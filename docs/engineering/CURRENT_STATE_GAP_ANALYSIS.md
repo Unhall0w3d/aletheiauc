@@ -2,32 +2,31 @@
 
 Historical Phase 0 snapshot reviewed on 2026-07-12 against `main` at
 `6b1b596c08cafee4c8149c12c3e81be7877e55e6`. Later hardening commits supersede
-the matrix statuses where implementation has since landed.
+the original matrix statuses. The matrix below was reconciled with the current
+implementation on 2026-07-13.
 The historical `03102c2` overlay was reviewed only as a source of hypotheses; none of
 its replacement files were applied.
 
 ## Preflight
 
-- Working tree: clean apart from the untracked, environment-owned `.codex_resume` file.
 - Python: `.venv/bin/python` reports Python 3.14.6. The installed editable package points
   to another workspace, so source-tree tests use `PYTHONPATH=src`.
 - Current verification: `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests`,
   `.venv/bin/ruff check src tests`, and `PYTHONPATH=src .venv/bin/python -m mypy src`.
-- Packaging validation is currently incomplete: the virtual environment cannot import
-  `setuptools.build_meta`, and the system Python lacks `pip`.
+- Packaging validation builds both sdist and wheel; CI installs and smoke-tests the wheel.
 
 ## Gap matrix
 
 | Area | Classification | Current evidence and relevant symbols | Follow-up phase |
 | --- | --- | --- | --- |
-| Collector failure isolation | Partially resolved | `AssessmentEngine.run` converts ordinary collector exceptions, but `TargetPipelineCollector.collect` calls child collectors directly. A child failure can suppress later child collectors for that target. | 1 |
-| Package runtime dependencies | Still present | `requirements.txt` lists Paramiko, while `[project].dependencies` in `pyproject.toml` does not. `transport.ssh.UcosSshSession` imports Paramiko in production. | 1 |
-| CI/release artifact verification | Still present | `.github/workflows/tests.yml` tests only Python 3.11 from an editable checkout; it does not build/install wheel or source artifacts. | 1 |
-| Artifact permissions/redaction/bundle metadata | Still present | `artifacts.py` uses default modes; API request/response text is redacted only with narrow regular expressions and CLI output is not redacted. Review ZIP manifests lack sensitivity/trust metadata. | 2 |
-| HTTPS/SSH trust defaults | Still present | `TlsPolicy.verify` defaults to `False`; CLI describes insecure as the alpha default. `UcosSshSession` uses Paramiko `AutoAddPolicy`. The current first-use behavior is superseded by explicit enrollment. | 3 |
-| Documentation and governance | Still present | `docs/` currently contains branding only. README and command help need a security/validation and support-boundary companion set. | 4 |
-| Module decomposition | Outstanding, intentionally deferred | `reports/html.py` (2,139 lines), `config.py` (1,002), `application.py` (628), and `rules/basic.py` (617) are responsibility-dense. No safe broad move is required for hardening. | 5 plan only |
-| UCOS command catalog | Partially resolved | `collectors.cuc_platform` has bounded, read-only commands and per-command timeouts, but selection remains a string tuple without stable metadata or applicability/sensitivity classification. | 5 small refactor |
+| Collector failure isolation | Resolved | `AssessmentEngine.run` and `TargetPipelineCollector.collect` both use `collect_safely`; only explicitly non-recoverable target errors stop later child collectors. | 1 |
+| Package runtime dependencies | Resolved | Paramiko is declared in both `requirements.txt` and `[project].dependencies`. | 1 |
+| CI/release artifact verification | Resolved | CI tests Python 3.11/3.13, builds artifacts, installs the wheel in a clean environment, and smoke-tests commands and packaged assets. | 1 |
+| Artifact permissions/redaction/bundle metadata | Resolved with operational caveat | POSIX permissions are private, API/CLI evidence applies default structured secret redaction, run IDs are collision-safe, and bundle manifests carry sensitivity/trust metadata. Operators must still review private diagnostic bundles. | 2 |
+| HTTPS/SSH trust defaults | Documented policy | HTTPS verification remains disabled by default for self-signed UC environments. SSH rejects unknown keys unless the operator explicitly enables first-use enrollment. | 3 |
+| Documentation and governance | Resolved for current scope | Security/data handling, transport trust, collector safety, report templates, branding, and modularization guidance are linked from README. | 4 |
+| Module decomposition | Outstanding, intentionally deferred | `reports/html.py`, `config.py`, `application.py`, and `rules/basic.py` remain responsibility-dense. No safe broad move is required for hardening. | 5 plan only |
+| UCOS command catalog | Resolved for CUC | `collectors.cuc_platform.CUC_COMMAND_CATALOG` provides stable IDs, command text, per-command timeouts, diagnostic-only scope, and sensitivity metadata. | 5 |
 | Product/package naming | No longer an immediate hardening defect | Public product and default command are AletheiaUC; distribution/import aliases remain compatibility debt. Do not rename package in this initiative. | 4 documentation |
 
 ## Dependency ordering and risks

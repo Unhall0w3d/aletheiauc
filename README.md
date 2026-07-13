@@ -37,6 +37,11 @@ after the scripting engine matures, but it is not a current concern.
 ## Documentation
 
 - [Branding and visual identity](docs/BRANDING.md)
+- [Security and data handling](docs/SECURITY_AND_DATA_HANDLING.md)
+- [Transport trust](docs/TRANSPORT_TRUST.md)
+- [Collector safety catalog](docs/COLLECTOR_SAFETY_CATALOG.md)
+- [HTML report templates](docs/REPORT_TEMPLATES.md)
+- [Technology modularization plan](docs/TECHNOLOGY_MODULARIZATION_PLAN.md)
 
 ## Report-Integrated Development Workflow
 
@@ -225,8 +230,9 @@ To choose an explicit artifact directory:
 ./aletheiauc.py --artifact-dir assessment_runs
 ```
 
-API request/response artifacts redact secret headers and password-like XML tags
-by default. To choose a different local artifact redaction mode:
+API request/response artifacts redact authentication headers and password-,
+secret-, token-, and API-key-like values in XML, JSON, and key/value text by
+default. To choose a different local artifact redaction mode:
 
 ```bash
 ./aletheiauc.py --artifact-redaction secrets
@@ -259,8 +265,8 @@ user's Downloads folder for the test/review/iterate workflow:
 ```
 
 The generated filename has the form
-`aletheiauc-review-<profile>-<timestamp>.zip`. The archive contains the matching
-`logs/<timestamp>/` bundle: report HTML, normalized assessment JSON, collector
+`aletheiauc-review-<profile>-<run-id>.zip`. The archive contains the matching
+`logs/<run-id>/` bundle: report HTML, normalized assessment JSON, collector
 warnings, manifests, attempt ledger, and copied raw/normalized artifacts.
 `--export-review-zip` cannot be combined with `--no-logs`.
 
@@ -622,7 +628,7 @@ Default layout:
 ```text
 assessment_runs/
   <profile>/
-    <timestamp>/
+    <unique-run-id>/
       manifest.json
       normalized/
       nodes/
@@ -635,8 +641,9 @@ assessment_runs/
 
 Current artifacts include Publisher preflight data, raw AXL SOAP request/response
 artifacts when AXL collection runs, normalized collector output, and per-node
-facts. Future SSH collectors should write raw command and stdout/stderr
-artifacts here before parsing.
+facts. Run IDs include microseconds and receive a numeric suffix on collision,
+so an existing run directory is never reused. SSH collectors write redacted raw
+command output here before parsing.
 
 When diagnostic capture is enabled, `operation_attempts.jsonl` is also written
 at the run root. Each line records one SOAP or HTTP attempt: interface,
@@ -655,7 +662,7 @@ Default layout:
 
 ```text
 logs/
-  <timestamp>/
+  <unique-run-id>/
     manifest.json
     run.log
     executive_summary.txt

@@ -533,12 +533,16 @@ def save_profiles(profiles: dict[str, StoredProfile], config_dir: Path | None = 
 
     path = profile_config_path(config_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "profile_names": sorted(set(load_profile_names(config_dir)) | set(profiles)),
-        "profiles": {
-            name: {key: value for key, value in asdict(profile).items() if key != "name"}
-            for name, profile in sorted(profiles.items())
-        },
+    payload: dict[str, object] = {}
+    if path.exists():
+        with path.open("r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+        if isinstance(loaded, dict):
+            payload = loaded
+    payload["profile_names"] = sorted(set(load_profile_names(config_dir)) | set(profiles))
+    payload["profiles"] = {
+        name: {key: value for key, value in asdict(profile).items() if key != "name"}
+        for name, profile in sorted(profiles.items())
     }
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)

@@ -65,6 +65,7 @@ pnpm-debug.log*
 /logs/
 /reports/
 /review/
+/aletheiauc-review-*.zip
 /scriptdebugs/
 tmp/
 temp/

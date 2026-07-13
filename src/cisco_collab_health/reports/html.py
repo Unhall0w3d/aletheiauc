@@ -6,7 +6,6 @@ from base64 import b64encode
 from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
-from hashlib import sha256
 from html import escape
 from pathlib import Path
 
@@ -120,6 +119,7 @@ class HtmlReportBuilder:
 
     def __init__(self, *, customer_safe: bool = False, template: str = "aletheiauc") -> None:
         self.customer_safe = customer_safe
+        self._identifier_aliases: dict[tuple[str, str], str] = {}
         try:
             self.template = REPORT_TEMPLATES[template]
             self.theme = REPORT_THEMES[template]
@@ -130,6 +130,7 @@ class HtmlReportBuilder:
             ) from exc
 
     def build(self, report: AssessmentReport) -> str:
+        self._identifier_aliases.clear()
         severity_counts = Counter(finding.severity for finding in report.findings)
         collector_note_count = sum(len(result.notes) for result in report.collector_results)
         collector_issue_count = sum(
@@ -1423,6 +1424,8 @@ class HtmlReportBuilder:
     def _device_rows(self, report: AssessmentReport) -> str:
         if not report.facts.devices:
             return '<tr><td colspan="8">No devices inventoried.</td></tr>'
+        if self.customer_safe:
+            return '<tr><td colspan="8">Detailed device identifiers and configuration omitted from customer-safe report.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -1532,6 +1535,8 @@ class HtmlReportBuilder:
     def _registration_rows(self, report: AssessmentReport) -> str:
         if not report.facts.registrations:
             return '<tr><td colspan="11">No device registration facts collected.</td></tr>'
+        if self.customer_safe:
+            return '<tr><td colspan="11">Detailed registration identifiers omitted from customer-safe report.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -1810,6 +1815,7 @@ class HtmlReportBuilder:
             technology = display_text(target.get("technology")).upper()
             technology_counts[technology] += 1
             address = self._target_address(report, target)
+            address = self._identifier(address, "Address")
             profile = (
                 "Omitted" if self.customer_safe else display_text(target.get("connection_profile"))
             )
@@ -2028,7 +2034,7 @@ class HtmlReportBuilder:
                 f"<td>{escape(self._identifier(check.node, 'Node'))}</td>"
                 f"<td>{escape(check.check_name)}</td>"
                 f"<td>{escape(check.status)}</td>"
-                f"<td>{escape(display_details(check.details))}</td>"
+                f"<td>{escape('Detailed output omitted' if self.customer_safe else display_details(check.details))}</td>"
                 f"<td>{escape(display_source(check.source))}</td>"
                 "</tr>"
             )
@@ -2117,7 +2123,7 @@ class HtmlReportBuilder:
                 )
                 rows.append(
                     "<tr>"
-                    f"<td>{escape(result.collector_name)}</td>"
+                    f"<td>{escape(self._collector_label(result.collector_name))}</td>"
                     "<td>error</td>"
                     f"<td>{escape(error_message)}</td>"
                     "</tr>"
@@ -2360,7 +2366,11 @@ class HtmlReportBuilder:
 
     def _finding_section(self, finding: HealthFinding) -> str:
         severity = escape(finding.severity.value)
-        facts = "\n".join(f"<li>{escape(fact)}</li>" for fact in finding.facts)
+        facts = (
+            "<li>Detailed assessment facts omitted from customer-safe report.</li>"
+            if self.customer_safe and finding.facts
+            else "\n".join(f"<li>{escape(fact)}</li>" for fact in finding.facts)
+        )
         recommendation = ""
         if finding.recommendation:
             escaped_recommendation = escape(finding.recommendation)
@@ -2428,10 +2438,14 @@ class HtmlReportBuilder:
 
     def _identifier(self, value: object | None, kind: str) -> str:
         text = display_text(value)
-        if not self.customer_safe or kind in {"Address", "Device", "Node"} or text == "—":
+        if not self.customer_safe or text == "—":
             return text
-        digest = sha256(f"{kind}:{text}".encode()).hexdigest()[:8].upper()
-        return f"{kind}-{digest}"
+        key = (kind, text)
+        alias = self._identifier_aliases.get(key)
+        if alias is None:
+            alias = f"{kind}-{sum(item_kind == kind for item_kind, _ in self._identifier_aliases) + 1:03d}"
+            self._identifier_aliases[key] = alias
+        return alias
 
     def _collector_label(self, name: str) -> str:
         """Keep internal target/profile labels out of customer-safe report metadata."""

@@ -258,8 +258,9 @@ class ReportBuilderTests(unittest.TestCase):
 
         self.assertIn("CUC Target 1", payload)
         self.assertIn("CUCM Target 1", payload)
-        self.assertIn("cuc-pub", payload)
-        self.assertIn("cucm-pub", payload)
+        self.assertNotIn("cuc-pub", payload)
+        self.assertNotIn("cucm-pub", payload)
+        self.assertRegex(payload, r"Node-[0-9]{3}")
         self.assertIn("Collection Evidence", payload)
         self.assertIn("CUCM configuration discovery; Unity Connection cluster status", payload)
         self.assertNotIn("Yorktown-Voice", payload)
@@ -286,10 +287,13 @@ class ReportBuilderTests(unittest.TestCase):
             },
         )
 
-        for builder in (HtmlReportBuilder(), HtmlReportBuilder(customer_safe=True)):
-            payload = builder.build(report)
-            self.assertIn("Server address", payload)
-            self.assertIn("192.0.2.10", payload)
+        engineering = HtmlReportBuilder().build(report)
+        customer = HtmlReportBuilder(customer_safe=True).build(report)
+        self.assertIn("Server address", engineering)
+        self.assertIn("192.0.2.10", engineering)
+        self.assertIn("Server address", customer)
+        self.assertNotIn("192.0.2.10", customer)
+        self.assertRegex(customer, r"Address-[0-9]{3}")
 
     def test_priority_findings_use_plain_language_and_hide_customer_evidence_ledger(self) -> None:
         finding = HealthFinding(
@@ -327,9 +331,10 @@ class ReportBuilderTests(unittest.TestCase):
             self.assertIn("Why it matters:", payload)
             self.assertIn("What we found:", payload)
             self.assertIn("Recommended next step:", payload)
-            self.assertIn("tomcat certificate on cucm-pub: expired 4 days ago", payload)
             self.assertIn("Assessment observations (1)", payload)
-            self.assertNotIn("Detailed facts omitted from customer-safe report.", payload)
+        self.assertIn("tomcat certificate on cucm-pub: expired 4 days ago", engineering)
+        self.assertNotIn("tomcat certificate on cucm-pub: expired 4 days ago", customer)
+        self.assertIn("Detailed assessment facts omitted from customer-safe report.", customer)
         self.assertIn("Technical collection detail", engineering)
         self.assertNotIn("Collection evidence was captured for this finding.", customer)
         self.assertNotIn("Technical collection detail", customer)
@@ -1041,12 +1046,14 @@ class ReportBuilderTests(unittest.TestCase):
 
         payload = HtmlReportBuilder(customer_safe=True).build(report)
 
-        self.assertIn("SEP001122334455", payload)
+        self.assertNotIn("SEP001122334455", payload)
         self.assertNotIn("PrivateCustomer", payload)
-        self.assertIn("private-publisher.example", payload)
+        self.assertNotIn("private-publisher.example", payload)
         self.assertNotIn("private/artifact/response.txt", payload)
         self.assertIn("Customer-safe HTML</th><td>Enabled", payload)
-        self.assertNotIn("Detailed device identifiers omitted", payload)
+        self.assertIn("Detailed device identifiers and configuration omitted", payload)
+        self.assertRegex(payload, r"Profile-[0-9]{3}")
+        self.assertRegex(payload, r"Node-[0-9]{3}")
 
     def test_html_report_contains_collector_notes_and_evidence(self) -> None:
         report = AssessmentReport(

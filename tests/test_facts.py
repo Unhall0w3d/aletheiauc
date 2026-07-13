@@ -153,6 +153,36 @@ class AssessmentFactsTests(unittest.TestCase):
 
         self.assertEqual(len(facts.nodes), 2)
 
+    def test_merge_preserves_same_named_nodes_from_distinct_targets(self) -> None:
+        facts = AssessmentFacts(
+            nodes=[
+                CollaborationNode(
+                    name="publisher",
+                    address="192.0.2.10",
+                    role="publisher",
+                    technology="cucm",
+                    target_id="call-control",
+                )
+            ]
+        )
+
+        facts.merge(
+            AssessmentFacts(
+                nodes=[
+                    CollaborationNode(
+                        name="publisher",
+                        address="192.0.2.20",
+                        role="publisher",
+                        technology="cuc",
+                        target_id="voicemail",
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual(len(facts.nodes), 2)
+        self.assertEqual({node.target_id for node in facts.nodes}, {"call-control", "voicemail"})
+
     def test_merge_deduplicates_device_inventory_by_name(self) -> None:
         facts = AssessmentFacts(
             devices=[

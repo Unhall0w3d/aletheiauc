@@ -46,9 +46,11 @@ class ArtifactStore:
         redaction_mode: str | ArtifactRedactionMode = ArtifactRedactionMode.SECRETS,
     ) -> "ArtifactStore":
         run_time = started_at or datetime.now()
-        run_id = run_time.strftime("%Y%m%d-%H%M%S")
-        root = Path(root_dir).expanduser() / _safe_name(profile_name) / run_id
-        _create_private_directory(root)
+        base_run_id = run_time.strftime("%Y%m%d-%H%M%S-%f")
+        root, run_id = _create_unique_run_directory(
+            Path(root_dir).expanduser() / _safe_name(profile_name),
+            base_run_id,
+        )
         return cls(
             root=root,
             run_id=run_id,
@@ -149,9 +151,11 @@ class RunLogStore:
         started_at: datetime | None = None,
     ) -> "RunLogStore":
         run_time = started_at or datetime.now()
-        run_id = run_time.strftime("%Y%m%d-%H%M%S")
-        root = Path(root_dir).expanduser() / run_id
-        _create_private_directory(root)
+        base_run_id = run_time.strftime("%Y%m%d-%H%M%S-%f")
+        root, run_id = _create_unique_run_directory(
+            Path(root_dir).expanduser(),
+            base_run_id,
+        )
         return cls(root=root, run_id=run_id, profile_name=profile_name)
 
     @property
@@ -388,7 +392,7 @@ def _sanitize_artifact_text(content: str, mode: ArtifactRedactionMode) -> str:
 
 def _redact_secret_values(content: str) -> str:
     content = re.sub(
-        r"(?im)^(authorization|cookie|set-cookie|x-csrf-token|x-auth-token):.*$",
+        r"(?im)^(authorization|proxy-authorization|cookie|set-cookie|x-csrf-token|x-auth-token|x-api-key):.*$",
         lambda match: f"{match.group(1)}: <redacted>",
         content,
     )
@@ -397,6 +401,18 @@ def _redact_secret_values(content: str) -> str:
         r"\1<redacted>\3",
         content,
         flags=re.IGNORECASE | re.DOTALL,
+    )
+    content = re.sub(
+        r'''(?ix)
+        ((?:["'])(?:password|passwd|secret|token|api[_-]?key)(?:["'])\s*:\s*)
+        (
+            "(?:\\.|[^"\\])*"
+            | '(?:\\.|[^'\\])*'
+            | [^\s,}\]]+
+        )
+        ''',
+        r'\1"<redacted>"',
+        content,
     )
     content = re.sub(
         r"(?i)(\b(?:password|passwd|secret|token|api[_-]?key)\b\s*[=:]\s*)([^\s,;]+)",
@@ -416,6 +432,24 @@ def _create_private_directory(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     if os.name == "posix":
         path.chmod(_PRIVATE_DIRECTORY_MODE)
+
+
+def _create_unique_run_directory(parent: Path, base_run_id: str) -> tuple[Path, str]:
+    """Create a private run directory without ever reusing an earlier run."""
+
+    _create_private_directory(parent)
+    suffix = 0
+    while True:
+        run_id = base_run_id if suffix == 0 else f"{base_run_id}-{suffix:02d}"
+        path = parent / run_id
+        try:
+            path.mkdir()
+        except FileExistsError:
+            suffix += 1
+            continue
+        if os.name == "posix":
+            path.chmod(_PRIVATE_DIRECTORY_MODE)
+        return path, run_id
 
 
 def _make_private(path: Path) -> None:

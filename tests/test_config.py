@@ -10,6 +10,7 @@ from cisco_collab_health.config import (
     AssessmentProfile,
     AssessmentTarget,
     KEYRING_SERVICE,
+    StoredProfile,
     delete_assessment_profile,
     delete_connection_profile,
     edit_connection_profile,
@@ -24,6 +25,7 @@ from cisco_collab_health.config import (
     resolve_assessment_targets,
     resolve_publisher,
     save_assessment_profiles,
+    save_profiles,
     select_or_create_runtime_profile,
 )
 
@@ -60,6 +62,31 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded["district"], assessment)
         self.assertNotIn("password", payload.lower())
+
+    def test_saving_non_secret_profiles_preserves_assessments_and_technology_metadata(self) -> None:
+        assessment = AssessmentProfile(
+            "district",
+            (AssessmentTarget("call-control", "cucm", "lab"),),
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            save_assessment_profiles({assessment.name: assessment}, config_dir)
+            register_profile_name("existing-cuc", config_dir, "cuc")
+
+            save_profiles(
+                {
+                    "lab": StoredProfile(
+                        "lab", "cucm.example", "192.0.2.10", "api", "platform"
+                    )
+                },
+                config_dir,
+            )
+
+            loaded_assessments = load_assessment_profiles(config_dir)
+            cuc_profiles = load_profile_names_for_technology("cuc", config_dir)
+
+        self.assertEqual(loaded_assessments["district"], assessment)
+        self.assertIn("existing-cuc", cuc_profiles)
 
     def test_assessment_profile_rejects_duplicate_target_ids(self) -> None:
         with self.assertRaises(ValueError):

@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -106,6 +107,28 @@ class ArtifactStoreTests(unittest.TestCase):
         self.assertNotIn("secret", request_text)
         self.assertNotIn("secret", response_text)
 
+    def test_api_exchange_redacts_json_secrets_and_additional_auth_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = ArtifactStore.create(Path(tmpdir), "lab")
+            request, response = store.write_api_exchange(
+                "192.0.2.10",
+                "cupi",
+                "users",
+                request="GET /vmrest/users HTTP/1.1\nProxy-Authorization: Basic proxy-secret\n",
+                response=(
+                    'HTTP 200\nX-API-Key: header-secret\n\n'
+                    '{"password": "json-secret", "nested": {"token": "nested-secret"}}'
+                ),
+            )
+
+            request_text = request.read_text(encoding="utf-8")
+            response_text = response.read_text(encoding="utf-8")
+
+        for secret in ("proxy-secret", "header-secret", "json-secret", "nested-secret"):
+            self.assertNotIn(secret, request_text + response_text)
+        self.assertIn('"password": "<redacted>"', response_text)
+        self.assertIn('"token": "<redacted>"', response_text)
+
     def test_api_exchange_can_disable_redaction(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = ArtifactStore.create(Path(tmpdir), "lab", redaction_mode="none")
@@ -133,6 +156,20 @@ class ArtifactStoreTests(unittest.TestCase):
             self.assertEqual(artifact.stat().st_mode & 0o777, 0o600)
             self.assertEqual(log_store.root.stat().st_mode & 0o777, 0o700)
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
+    def test_same_timestamp_never_reuses_artifact_or_log_directories(self) -> None:
+        started_at = datetime(2026, 7, 13, 12, 0, 0)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            first_artifacts = ArtifactStore.create(root / "assessment_runs", "lab", started_at)
+            second_artifacts = ArtifactStore.create(root / "assessment_runs", "lab", started_at)
+            first_logs = RunLogStore.create(root / "logs", "first", started_at)
+            second_logs = RunLogStore.create(root / "logs", "second", started_at)
+
+        self.assertNotEqual(first_artifacts.root, second_artifacts.root)
+        self.assertNotEqual(first_artifacts.run_id, second_artifacts.run_id)
+        self.assertNotEqual(first_logs.root, second_logs.root)
+        self.assertNotEqual(first_logs.run_id, second_logs.run_id)
 
     def test_cli_output_uses_the_configured_secret_redaction(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

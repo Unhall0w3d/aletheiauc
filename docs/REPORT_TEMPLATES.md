@@ -36,10 +36,12 @@ the customer deliverable while retaining the engineering artifacts in the same
 private bundle.
 
 Customer-safe reports use the same assessment facts as engineering reports.
-They do not use synthetic data; instead they mask saved target/profile labels
-and private artifact paths, preserve operational node, device, and address data
-needed for customer understanding, omit detailed technical evidence inventories,
-and retain the findings and summarized collection coverage needed for review.
+They do not use synthetic data. They pseudonymize profile, target, node, device,
+and address identifiers; omit private artifact paths, detailed device and
+registration tables, platform-command details, finding fact strings, and
+technical evidence inventories; and retain de-identified findings and summarized
+collection coverage needed for review. The pseudonyms are deterministic within
+a report so repeated references remain understandable.
 
 The standalone AletheiaUC report embeds only the artwork it actively renders;
 the hero image is not duplicated as a section watermark. This keeps the report

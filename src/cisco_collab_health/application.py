@@ -469,7 +469,7 @@ def _write_html_report(
     if requested_path:
         path = Path(requested_path).expanduser()
     else:
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         path = Path("reports") / f"assessment-{timestamp}.html"
 
     path.parent.mkdir(parents=True, exist_ok=True)

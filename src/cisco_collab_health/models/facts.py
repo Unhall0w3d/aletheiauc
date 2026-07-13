@@ -212,6 +212,8 @@ class AssessmentFacts:
     def _node_index(self, node: CollaborationNode) -> int | None:
         node_keys = _node_keys(node)
         for index, existing in enumerate(self.nodes):
+            if not _same_target_scope(existing, node):
+                continue
             if _node_keys(existing) & node_keys:
                 return index
         return None
@@ -321,6 +323,14 @@ def _node_keys(node: CollaborationNode) -> set[str]:
         }
         if key
     }
+
+
+def _same_target_scope(left: CollaborationNode, right: CollaborationNode) -> bool:
+    """Keep identically named nodes from separate assessment targets distinct."""
+
+    if left.target_id is None and right.target_id is None:
+        return True
+    return left.target_id == right.target_id and left.technology == right.technology
 
 
 def _normalize_node_key(value: str) -> str:
