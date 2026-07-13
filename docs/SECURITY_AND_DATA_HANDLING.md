@@ -21,6 +21,12 @@ mailbox/user identities, email addresses, credentials, and message content.
 It retains engineering-relevant phone-system, port, routing-target, schedule,
 mailbox-store, message-aging, and SMTP configuration values. Linked message-aging
 rule collection follows only same-server `/vmrest/` paths returned by the policy API.
+Experimental CUC Informix collection accepts no operator-provided SQL. It runs
+only fixed `SELECT FIRST 100` queries against `unitydirdb` on the publisher and
+rejects statement separators, comments, and mutation/administration keywords.
+Normalized results deliberately retain directory extensions, call-handler names,
+touch-tone keys, transfer numbers, and target conversations; raw query output is
+private diagnostic evidence.
 CUCM line, LDAP, routing, and integration names can reveal customer dial plans or
 directory structure and are deliberately retained in both HTML editions. JSON
 and raw API evidence remain private diagnostic material.

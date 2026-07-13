@@ -640,6 +640,7 @@ class ReportBuilderTests(unittest.TestCase):
                 "Device load defaults",
                 "Unity Connection inventory",
                 "Unity Connection configuration",
+                "Unity Connection experimental SQL",
                 "Configuration inventory",
                 "Device registration",
                 "Services",

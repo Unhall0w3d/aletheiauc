@@ -41,6 +41,7 @@ def build_report_coverage(report: AssessmentReport) -> list[ReportCoverageItem]:
         _device_load_defaults_coverage(report, collection_ran),
         _cuc_inventory_coverage(report, collection_ran),
         _cuc_configuration_coverage(report, collection_ran),
+        _cuc_informix_coverage(report, collection_ran),
         _count_coverage(
             "Configuration inventory",
             len(report.facts.configuration_objects),
@@ -209,15 +210,41 @@ def _cuc_configuration_coverage(
     configuration_types = {
         item.object_type
         for item in report.facts.configuration_objects
-        if item.source.startswith("CUC.CUPI") and not item.object_type.endswith("Inventory")
+        if item.source == "CUC.INFORMIX.SQL"
+        or (item.source.startswith("CUC.CUPI") and not item.object_type.endswith("Inventory"))
     }
     return _count_coverage(
         "Unity Connection configuration",
         len(configuration_types),
         collection_ran=collection_ran,
-        collected_detail="Sanitized CUPI configuration records were normalized by object type.",
+        collected_detail="Sanitized CUPI and experimental SQL configuration records were normalized by object type.",
         empty_detail="Collection ran but no detailed Unity Connection configuration was normalized.",
         not_collected_detail="No detailed Unity Connection CUPI configuration result is available.",
+    )
+
+
+def _cuc_informix_coverage(
+    report: AssessmentReport, collection_ran: bool,
+) -> ReportCoverageItem:
+    checks = [
+        item for item in report.facts.platform_checks
+        if item.source == "CUC.INFORMIX.SQL"
+    ]
+    if not checks:
+        return _count_coverage(
+            "Unity Connection experimental SQL",
+            0,
+            collection_ran=collection_ran,
+            collected_detail="Experimental SQL validation probes completed.",
+            empty_detail="Collection ran without experimental CUC SQL validation.",
+            not_collected_detail="No experimental CUC SQL validation result is available.",
+        )
+    complete = sum(item.status == "collected" for item in checks)
+    return ReportCoverageItem(
+        name="Unity Connection experimental SQL",
+        status="collected" if complete == len(checks) else "partial",
+        count=complete,
+        detail=f"{complete} of {len(checks)} fixed, bounded Informix probes completed.",
     )
 
 

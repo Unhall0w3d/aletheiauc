@@ -35,13 +35,14 @@ class CucPlugin:
         from cisco_collab_health.rules.basic import (
             CucPlatformHealthRule,
             CucPlatformStatusRule,
+            CucInformixDialPlanRule,
             CucServicePolicyRule,
             CucSmtpSecurityRule,
         )
 
         return [
             CucPlatformHealthRule(), CucPlatformStatusRule(), CucServicePolicyRule(),
-            CucSmtpSecurityRule(),
+            CucSmtpSecurityRule(), CucInformixDialPlanRule(),
         ]
 
 

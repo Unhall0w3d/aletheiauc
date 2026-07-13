@@ -1180,6 +1180,74 @@ class CucSmtpSecurityRule:
         ]
 
 
+class CucInformixDialPlanRule:
+    """Assess experimental CUC SQL dial-plan and transfer-path results."""
+
+    rule_id = "cuc.experimental_sql_dial_plan"
+
+    def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
+        duplicates = [
+            item for item in facts.configuration_objects
+            if item.object_type == "CucSqlDuplicateExtension"
+        ]
+        transfers = [
+            item for item in facts.configuration_objects
+            if item.object_type in {
+                "CucSqlAlternateContactTransfer", "CucSqlSystemTransferTarget",
+            }
+        ]
+        findings = []
+        if duplicates:
+            findings.append(HealthFinding(
+                rule_id=f"{self.rule_id}.duplicate_extensions",
+                title="Duplicate Unity Connection directory extensions detected",
+                severity=FindingSeverity.WARNING,
+                recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+                facts=[
+                    f"Extension {item.name}: {item.details.get('occurrencecount', 'multiple')} records"
+                    for item in duplicates
+                ],
+                reasoning=(
+                    "The bounded experimental query found DTMF access IDs assigned more than "
+                    "once. Unintended duplicates can make addressing and MWI troubleshooting "
+                    "ambiguous."
+                ),
+                recommendation=(
+                    "Review each duplicate against the intended Unity Connection dial plan and "
+                    "remove or reassign only unintended collisions."
+                ),
+                evidence=[EvidenceRef(
+                    source="CUC.INFORMIX.SQL", operation="cuc.sql.duplicate_extensions",
+                    confidence="medium",
+                )],
+            ))
+        if transfers:
+            findings.append(HealthFinding(
+                rule_id=f"{self.rule_id}.transfer_paths",
+                title="Unity Connection call-handler transfer paths require policy review",
+                severity=FindingSeverity.INFO,
+                recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+                facts=[
+                    f"{item.name}: key {item.details.get('touchtonekey', '—')}; target "
+                    f"{item.details.get('transfernumber') or item.details.get('targetconversation') or '—'}"
+                    for item in transfers
+                ],
+                reasoning=(
+                    "Alternate-contact and system-transfer paths can be intentional, but they "
+                    "expand the set of destinations reachable through Unity Connection."
+                ),
+                recommendation=(
+                    "Confirm each path is required and that the applicable restriction tables, "
+                    "calling permissions, and toll-fraud controls constrain it appropriately."
+                ),
+                evidence=[EvidenceRef(
+                    source="CUC.INFORMIX.SQL", operation="cuc.sql.transfer_targets",
+                    confidence="medium",
+                )],
+            ))
+        return findings
+
+
 class CucmTopologyCompletenessRule:
     """Report collected routing/media containers that have no configured members."""
 

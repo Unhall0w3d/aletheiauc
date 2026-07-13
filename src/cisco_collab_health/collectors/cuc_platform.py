@@ -12,6 +12,7 @@ from cisco_collab_health.models.facts import (
     AssessmentFacts,
     ClusterIdentity,
     CollaborationNode,
+    ConfigurationObjectFact,
     PlatformCheckFact,
     ServiceStatusFact,
 )
@@ -29,6 +30,24 @@ class UcosCommand:
     output_sensitive: bool = True
 
 
+@dataclass(frozen=True)
+class CucInformixProbe:
+    """One fixed, bounded, experimental CUC Informix SELECT probe."""
+
+    probe_id: str
+    database: str
+    query: str
+    object_type: str
+    identity_field: str
+    detail_fields: tuple[str, ...]
+    row_limit: int = 100
+    timeout_seconds: int = 30
+
+    @property
+    def command(self) -> str:
+        return f"run cuc dbquery {self.database} {self.query}"
+
+
 CUC_COMMAND_CATALOG = (
     UcosCommand("cuc.show_status", "show status", 30),
     UcosCommand("cuc.show_version_active", "show version active", 30),
@@ -42,6 +61,49 @@ CUC_COMMAND_CATALOG = (
     UcosCommand("cuc.show_cluster_status", "show cuc cluster status", 30),
 )
 CUC_SAFE_CLI_COMMANDS = tuple(item.command for item in CUC_COMMAND_CATALOG)
+
+CUC_INFORMIX_PROBE_CATALOG = (
+    CucInformixProbe(
+        "cuc.sql.duplicate_extensions",
+        "unitydirdb",
+        "select first 100 dtmfaccessid, count(dtmfaccessid) as occurrencecount "
+        "from vw_user where dtmfaccessid is not null and dtmfaccessid != '' "
+        "group by dtmfaccessid having count(dtmfaccessid) > 1 "
+        "order by occurrencecount desc",
+        "CucSqlDuplicateExtension",
+        "dtmfaccessid",
+        ("occurrencecount",),
+    ),
+    CucInformixProbe(
+        "cuc.sql.alternate_contact_transfers",
+        "unitydirdb",
+        "select first 100 ch.displayname as callhandler, ch.dtmfaccessid, "
+        "me.touchtonekey, acn.transfernumber from vw_callhandler as ch "
+        "inner join vw_menuentry as me on ch.objectid=me.callhandlerobjectid "
+        "and ch.isprimary='0' and me.action='7' "
+        "inner join vw_alternatecontactnumber as acn "
+        "on acn.menuentryobjectid=me.objectid",
+        "CucSqlAlternateContactTransfer",
+        "callhandler",
+        ("dtmfaccessid", "touchtonekey", "transfernumber"),
+    ),
+    CucInformixProbe(
+        "cuc.sql.system_transfer_targets",
+        "unitydirdb",
+        "select first 100 ch.displayname as callhandler, ch.dtmfaccessid, "
+        "me.touchtonekey, me.targetconversation from vw_callhandler as ch "
+        "inner join vw_menuentry as me on ch.objectid=me.callhandlerobjectid "
+        "and ch.isprimary='0' where me.targetconversation in "
+        "('SubSysTransfer','SystemTransfer','AD')",
+        "CucSqlSystemTransferTarget",
+        "callhandler",
+        ("dtmfaccessid", "touchtonekey", "targetconversation"),
+    ),
+)
+
+_FORBIDDEN_SQL = re.compile(
+    r"(?i)\b(?:insert|update|delete|execute|drop|alter|create|truncate|merge|grant|revoke)\b"
+)
 
 
 class CliSession(Protocol):
@@ -65,6 +127,10 @@ class CucPlatformCollector:
     def collect(self, context: CollectionContext) -> CollectionResult:
         facts = AssessmentFacts()
         warnings: list[str] = []
+        notes = [
+            "CUC Informix validation is experimental and uses only fixed, publisher-only "
+            "SELECT FIRST 100 probes against unitydirdb."
+        ]
         version: str | None = None
         publisher = context.publisher_ip or context.target
         if not publisher:
@@ -81,9 +147,10 @@ class CucPlatformCollector:
             )
             if node == publisher and node_version:
                 version = node_version
+        self._collect_informix_probes(context, publisher, facts, warnings)
         if version:
             facts.cluster = ClusterIdentity(publisher, "Cisco Unity Connection", version)
-        return CollectionResult(self.name, facts, warnings=warnings)
+        return CollectionResult(self.name, facts, warnings=warnings, notes=notes)
 
     def _collect_cluster_listing(
         self, context: CollectionContext, node: str, facts: AssessmentFacts, warnings: list[str]
@@ -133,6 +200,72 @@ class CucPlatformCollector:
             warnings.append(f"CUC SSH session failed on {node}: {exc}")
         return version
 
+    def _collect_informix_probes(
+        self, context: CollectionContext, node: str, facts: AssessmentFacts,
+        warnings: list[str],
+    ) -> None:
+        """Run fixed experimental SELECT probes on the CUC publisher only."""
+
+        try:
+            with self.session_factory(context) as session:
+                for probe in CUC_INFORMIX_PROBE_CATALOG:
+                    try:
+                        _validate_cuc_informix_probe(probe)
+                        result = session.execute(
+                            probe.command, timeout_seconds=probe.timeout_seconds,
+                        )
+                    except SshCommandTimeout as exc:
+                        if context.artifact_store is not None and exc.output:
+                            context.artifact_store.write_command_output(
+                                node, probe.probe_id,
+                                f"SQL command: {probe.command}\n\n{exc.output}",
+                            )
+                        facts.platform_checks.append(
+                            _cuc_informix_check(node, probe, "incomplete", exc.output)
+                        )
+                        warnings.append(
+                            f"Experimental CUC Informix probe '{probe.probe_id}' timed out; "
+                            "partial output was retained privately."
+                        )
+                        continue
+                    except Exception as exc:
+                        warnings.append(
+                            f"Experimental CUC Informix probe '{probe.probe_id}' failed: {exc}"
+                        )
+                        continue
+                    if context.artifact_store is not None:
+                        context.artifact_store.write_command_output(
+                            node, probe.probe_id,
+                            f"SQL command: {probe.command}\n\n{result.output}",
+                        )
+                    rows = _parse_cuc_dbquery_rows(result.output)
+                    if _cuc_dbquery_error(result.output):
+                        status = "unsupported"
+                    elif rows or _cuc_dbquery_zero_rows(result.output):
+                        status = "collected"
+                    else:
+                        status = "unparsed"
+                    facts.platform_checks.append(
+                        _cuc_informix_check(node, probe, status, result.output, rows=rows)
+                    )
+                    if status == "unsupported":
+                        warnings.append(
+                            f"Experimental CUC Informix probe '{probe.probe_id}' returned a "
+                            "database/schema error; see private evidence."
+                        )
+                        continue
+                    if status == "unparsed":
+                        warnings.append(
+                            f"Experimental CUC Informix probe '{probe.probe_id}' returned an "
+                            "unrecognized result shape; see private evidence."
+                        )
+                        continue
+                    facts.configuration_objects.extend(
+                        _cuc_informix_facts(probe, rows)
+                    )
+        except Exception as exc:
+            warnings.append(f"CUC Informix validation session failed on {node}: {exc}")
+
 
 def _cuc_check(
     node: str, definition: UcosCommand, status: str, output: str, paged: bool,
@@ -148,6 +281,118 @@ def _cuc_check(
             **_cuc_cli_summary(definition.command, output),
         }, source="CUC.UCOS.CLI",
     )
+
+
+def _validate_cuc_informix_probe(probe: CucInformixProbe) -> None:
+    """Reject any catalog entry that is not one fixed, bounded SELECT."""
+
+    query = probe.query.strip()
+    if probe.database != "unitydirdb":
+        raise ValueError("experimental probes are restricted to unitydirdb")
+    if not re.match(r"(?is)^select\s+first\s+\d+\s+", query):
+        raise ValueError("CUC Informix probes must begin with SELECT FIRST")
+    limit = re.match(r"(?is)^select\s+first\s+(\d+)\s+", query)
+    if limit is None or int(limit.group(1)) != probe.row_limit or probe.row_limit > 100:
+        raise ValueError("CUC Informix query limit must match a maximum of 100 rows")
+    if ";" in query or "--" in query or "/*" in query or "*/" in query:
+        raise ValueError("CUC Informix probes cannot contain statement separators or comments")
+    if _FORBIDDEN_SQL.search(query):
+        raise ValueError("CUC Informix probe contains a non-read-only SQL keyword")
+
+
+def _parse_cuc_dbquery_rows(output: str) -> list[dict[str, str]]:
+    """Parse the fixed-width table emitted by ``run cuc dbquery``."""
+
+    lines = output.splitlines()
+    for index, line in enumerate(lines):
+        spans = [(match.start(), match.end()) for match in re.finditer(r"-+", line)]
+        if not spans or re.sub(r"[-\s]", "", line):
+            continue
+        header_index = index - 1
+        while header_index >= 0 and not lines[header_index].strip():
+            header_index -= 1
+        if header_index < 0:
+            return []
+        header = lines[header_index]
+        names = [header[start:end].strip().lower() for start, end in spans]
+        if not all(names):
+            return []
+        rows: list[dict[str, str]] = []
+        for row_line in lines[index + 1:]:
+            stripped = row_line.strip()
+            if not stripped:
+                if rows:
+                    break
+                continue
+            if re.match(r"(?i)^(?:rows?:|no records found|command failed)", stripped):
+                break
+            row = {
+                name: row_line[start:end].strip()
+                for name, (start, end) in zip(names, spans, strict=True)
+            }
+            if any(row.values()):
+                rows.append(row)
+        return rows
+    return []
+
+
+def _cuc_dbquery_error(output: str) -> bool:
+    return bool(re.search(
+        r"(?im)^(?:command failed|.*sql error|.*syntax error|.*(?:table|column).*"
+        r"(?:not found|does not exist))",
+        output,
+    ))
+
+
+def _cuc_dbquery_zero_rows(output: str) -> bool:
+    return bool(re.search(r"(?im)^(?:no records found|rows?:\s*0)\s*$", output))
+
+
+def _cuc_informix_check(
+    node: str, probe: CucInformixProbe, status: str, output: str,
+    *, rows: list[dict[str, str]] | None = None,
+) -> PlatformCheckFact:
+    return PlatformCheckFact(
+        node=node,
+        check_name=probe.probe_id,
+        status=status,
+        details={
+            "experimental": "true",
+            "database": probe.database,
+            "row_limit": str(probe.row_limit),
+            "rows_normalized": str(len(rows or [])),
+            "output_captured": str(bool(output)).lower(),
+            "output_length": str(len(output)),
+            "timeout_seconds": str(probe.timeout_seconds),
+            "read_only_validated": "true",
+        },
+        source="CUC.INFORMIX.SQL",
+    )
+
+
+def _cuc_informix_facts(
+    probe: CucInformixProbe, rows: list[dict[str, str]],
+) -> list[ConfigurationObjectFact]:
+    facts = []
+    for row in rows:
+        identity = row.get(probe.identity_field, "").strip()
+        if not identity:
+            continue
+        facts.append(ConfigurationObjectFact(
+            object_type=probe.object_type,
+            name=identity,
+            details={
+                "experimental": "true",
+                "probe_id": probe.probe_id,
+                **{
+                    field: value
+                    for field in probe.detail_fields
+                    if (value := row.get(field, "").strip())
+                },
+            },
+            source="CUC.INFORMIX.SQL",
+        ))
+    return facts
 
 
 def _cuc_cli_summary(command: str, output: str) -> dict[str, str]:

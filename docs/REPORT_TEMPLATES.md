@@ -57,6 +57,17 @@ evidence remain unchanged. CUCM line-group directory numbers and SIP destination
 addresses are also recovered through fixed, server-bounded SQL when the standard
 AXL object contains only UUIDs or ports.
 
+Diagnostic CUC reports include a separate **Unity Connection Experimental SQL
+Validation** table showing each fixed probe's completion status, normalized row
+count, and limit. Successful duplicate-extension and call-handler transfer rows
+also appear in Unity Connection Configuration with an `experimental` label. The
+customer-safe edition intentionally retains extensions, call-handler names,
+touch-tone keys, transfer numbers, and target conversations for engineering use;
+raw SQL output and artifact paths remain private.
+Duplicate extensions produce a warning, while configured alternate-contact and
+system-transfer paths produce an informational restriction-table/toll-fraud
+review; neither finding is emitted when its experimental probe did not complete.
+
 The standalone AletheiaUC report embeds only the artwork it actively renders;
 the hero image is not duplicated as a section watermark or accompanied by a
 second logo above the engineering-brief label. The full-width divider between

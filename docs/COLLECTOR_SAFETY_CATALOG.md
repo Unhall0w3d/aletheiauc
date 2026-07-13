@@ -40,9 +40,16 @@ response that lacks the expected object is marked unavailable, not empty. A
 line-group response containing member UUIDs is recognized as populated even when
 AXL omits the directory-number text.
 
-No general SQL input is accepted. CUC Informix mailbox queries remain deferred
-until version-specific fixtures establish command syntax, result schemas, and
-acceptable execution time. CUCM SQL remains limited to fixed Device Defaults and
+No general SQL input is accepted. Diagnostic CUC collection includes an
+experimental, publisher-only Informix catalog. Every entry is restricted to
+`unitydirdb`, must begin with `SELECT FIRST`, is capped at 100 rows, has a
+30-second timeout, and is rejected if it contains comments, separators, or SQL
+mutation/administration keywords. The initial probes cover duplicate directory
+extensions, call-handler alternate-contact transfers, and call-handler system
+transfer targets. Mailbox-database queries remain deferred because Cisco warns
+that complex cross-database message queries can run for extended periods.
+
+CUCM SQL remains limited to fixed Device Defaults and
 `first 500` route-pattern, line-group member, SIP trunk destination, and configured
 CFA queries;
 standard AXL list/get calls are preferred wherever they remain reliably bounded.
@@ -59,6 +66,21 @@ standard AXL list/get calls are preferred wherever they remain reliably bounded.
 | `cuc.utils_service_list` | `utils service list` | 120s |
 | `cuc.utils_core_active_list` | `utils core active list` | 120s |
 | `cuc.show_cluster_status` | `show cuc cluster status` | 30s |
+
+### Experimental CUC Informix validation
+
+| ID | Database and scope | Limit | Timeout |
+| --- | --- | --- | --- |
+| `cuc.sql.duplicate_extensions` | `unitydirdb`; duplicate `dtmfaccessid` aggregates | 100 | 30s |
+| `cuc.sql.alternate_contact_transfers` | `unitydirdb`; call-handler alternate-contact targets | 100 | 30s |
+| `cuc.sql.system_transfer_targets` | `unitydirdb`; call-handler system-transfer conversations | 100 | 30s |
+
+Probe completion is reported as validation coverage. Successful rows are
+normalized as explicitly experimental configuration. Duplicate extension rows
+produce a conservative warning and configured transfer paths produce an
+informational policy review. Query/schema errors and timeouts are shown only as
+collection limitations and cannot generate those findings. SQL artifacts retain
+the exact fixed query and raw output only in the private engineering bundle.
 
 An unsupported command must be omitted by selection logic, not executed and
 misreported as a health failure. CUC command behavior is fixture-tested; exact

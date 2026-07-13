@@ -21,6 +21,7 @@ from cisco_collab_health.rules.basic import (
     CollectorHealthRule,
     CertificateValidityRule,
     CucPlatformStatusRule,
+    CucInformixDialPlanRule,
     CucSmtpSecurityRule,
     CucmPlatformHealthRule,
     CucmTopologyCompletenessRule,
@@ -203,6 +204,31 @@ class CucPlatformRulesTests(unittest.TestCase):
             [finding.severity for finding in findings],
             [FindingSeverity.CRITICAL, FindingSeverity.CRITICAL],
         )
+
+
+class CucInformixDialPlanRuleTests(unittest.TestCase):
+    def test_duplicate_extensions_and_transfer_paths_are_assessed(self) -> None:
+        facts = AssessmentFacts(configuration_objects=[
+            ConfigurationObjectFact(
+                object_type="CucSqlDuplicateExtension", name="1000",
+                details={"occurrencecount": "2", "experimental": "true"},
+                source="CUC.INFORMIX.SQL",
+            ),
+            ConfigurationObjectFact(
+                object_type="CucSqlAlternateContactTransfer", name="Main Menu",
+                details={"touchtonekey": "9", "transfernumber": "90115551212"},
+                source="CUC.INFORMIX.SQL",
+            ),
+        ])
+
+        findings = CucInformixDialPlanRule().evaluate(facts)
+
+        self.assertEqual(
+            [item.severity for item in findings],
+            [FindingSeverity.WARNING, FindingSeverity.INFO],
+        )
+        self.assertIn("Extension 1000", findings[0].facts[0])
+        self.assertIn("90115551212", findings[1].facts[0])
 
 
 class CertificateValidityRuleTests(unittest.TestCase):

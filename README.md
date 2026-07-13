@@ -500,6 +500,17 @@ CUC, IM&P, and CER collectors. SSH host keys must already be trusted by the
 local system. On first connection to an assessment target, the collector stores
 the presented key in the user's `~/.ssh/known_hosts`; subsequent connections
 verify that saved key and fail if it changes.
+
+Diagnostic CUC collection also runs three experimental Informix validation probes
+on the publisher: duplicate directory extensions, call-handler alternate-contact
+transfers, and call-handler system-transfer targets. These are fixed
+`run cuc dbquery unitydirdb SELECT FIRST 100 ...` commands with 30-second timeouts;
+there is no general SQL input. Results expose the relevant dial-plan values and
+target names in both report editions, while full command output remains private.
+Schema errors and timeouts are reported as collection limitations rather than
+health findings. Successful duplicate-extension rows generate a warning for
+engineering review; configured transfer paths generate an informational policy
+review with the concrete handler, key, and target values.
 CUCM remains the default product. CUC Platform credentials are stored through
 the existing encrypted OS/SSH credential path for upcoming CLI collection.
 
@@ -519,7 +530,8 @@ offline review and conservative priority findings.
 
 During CUC diagnostic capture, AletheiaUC first uses `show network cluster` on
 the publisher, then applies its bounded, read-only platform catalog to each
-discovered member. Newly discovered SSH hosts remain rejected by default; use
+discovered member. Experimental Informix validation runs only on the publisher.
+Newly discovered SSH hosts remain rejected by default; use
 the explicit first-use enrollment choice only after verifying their fingerprints
 out of band.
 

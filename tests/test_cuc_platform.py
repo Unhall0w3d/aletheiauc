@@ -9,14 +9,21 @@ from pathlib import Path
 from cisco_collab_health.artifacts import ArtifactStore
 from cisco_collab_health.collectors.cuc_platform import (
     CUC_COMMAND_CATALOG,
+    CUC_INFORMIX_PROBE_CATALOG,
     CUC_SAFE_CLI_COMMANDS,
+    CucInformixProbe,
     CucPlatformCollector,
     _cuc_cluster_nodes,
     _cuc_cli_summary,
+    _cuc_dbquery_zero_rows,
+    _parse_cuc_dbquery_rows,
     _cuc_service_status,
     _cuc_version,
+    _validate_cuc_informix_probe,
 )
 from cisco_collab_health.models.runtime import CollectionContext
+from cisco_collab_health.models.assessment import AssessmentReport
+from cisco_collab_health.reports.html import HtmlReportBuilder
 from cisco_collab_health.transport.ssh import SshCommandResult, SshCommandTimeout
 
 
@@ -105,10 +112,11 @@ class CucPlatformCollectorTests(unittest.TestCase):
                 ["show network cluster", *[
                     command for command in CUC_SAFE_CLI_COMMANDS
                     if command != "show network cluster"
-                ]],
+                ], *[probe.command for probe in CUC_INFORMIX_PROBE_CATALOG]],
             )
-            self.assertEqual(len(result.facts.platform_checks), len(CUC_SAFE_CLI_COMMANDS))
-            self.assertEqual(len(list(artifacts.root.rglob("*.txt"))), len(CUC_SAFE_CLI_COMMANDS))
+            expected = len(CUC_SAFE_CLI_COMMANDS) + len(CUC_INFORMIX_PROBE_CATALOG)
+            self.assertEqual(len(result.facts.platform_checks), expected)
+            self.assertEqual(len(list(artifacts.root.rglob("*.txt"))), expected)
 
     def test_collector_applies_platform_catalog_to_discovered_cuc_members(self) -> None:
         commands: list[str] = []
@@ -129,7 +137,77 @@ class CucPlatformCollectorTests(unittest.TestCase):
         ).collect(CollectionContext(publisher_ip="192.0.2.20"))
 
         self.assertIn("192.0.2.21:show status", commands)
-        self.assertEqual(len(result.facts.platform_checks), 1 + (len(CUC_SAFE_CLI_COMMANDS) - 1) * 2)
+        self.assertEqual(
+            len(result.facts.platform_checks),
+            1 + (len(CUC_SAFE_CLI_COMMANDS) - 1) * 2 + len(CUC_INFORMIX_PROBE_CATALOG),
+        )
+        self.assertFalse(any("192.0.2.21:run cuc dbquery" in item for item in commands))
+
+    def test_informix_catalog_is_fixed_bounded_and_read_only(self) -> None:
+        for probe in CUC_INFORMIX_PROBE_CATALOG:
+            _validate_cuc_informix_probe(probe)
+            self.assertTrue(probe.query.lower().startswith("select first 100 "))
+
+        unsafe = CucInformixProbe(
+            "unsafe", "unitydirdb", "select first 100 objectid from vw_user; delete from vw_user",
+            "Unsafe", "objectid", (),
+        )
+        with self.assertRaises(ValueError):
+            _validate_cuc_informix_probe(unsafe)
+
+    def test_informix_fixed_width_rows_are_normalized(self) -> None:
+        output = """dtmfaccessid occurrencecount
+------------ ---------------
+1000         2
+2000         3
+
+rows: 2"""
+
+        rows = _parse_cuc_dbquery_rows(output)
+
+        self.assertEqual(rows, [
+            {"dtmfaccessid": "1000", "occurrencecount": "2"},
+            {"dtmfaccessid": "2000", "occurrencecount": "3"},
+        ])
+        self.assertTrue(_cuc_dbquery_zero_rows("No records found"))
+        self.assertTrue(_cuc_dbquery_zero_rows("rows: 0"))
+        self.assertFalse(_cuc_dbquery_zero_rows("output for query"))
+
+    def test_informix_results_become_experimental_configuration_facts(self) -> None:
+        class SqlSession(FakeSession):
+            def execute(
+                self, command: str, *, timeout_seconds: int | None = None,
+            ) -> SshCommandResult:
+                self.commands.append(command)
+                if "duplicate_extensions" in command:
+                    raise AssertionError("probe IDs are not sent as SQL")
+                if command.startswith("run cuc dbquery") and "vw_user" in command:
+                    return SshCommandResult(command, """dtmfaccessid occurrencecount
+------------ ---------------
+1000         2
+
+rows: 1""")
+                return SshCommandResult(command, f"output for {command}")
+
+        commands: list[str] = []
+        result = CucPlatformCollector(
+            session_factory=lambda context: SqlSession(context, commands)
+        ).collect(CollectionContext(publisher_ip="192.0.2.20"))
+
+        duplicate = next(
+            item for item in result.facts.configuration_objects
+            if item.object_type == "CucSqlDuplicateExtension"
+        )
+        self.assertEqual(duplicate.name, "1000")
+        self.assertEqual(duplicate.details["occurrencecount"], "2")
+        self.assertEqual(duplicate.details["experimental"], "true")
+
+        html = HtmlReportBuilder(customer_safe=True).build(
+            AssessmentReport(result.facts, [result], [])
+        )
+        self.assertIn("Unity Connection Experimental SQL Validation", html)
+        self.assertIn("Duplicate directory extensions", html)
+        self.assertIn(">1000<", html)
 
     def test_collector_retains_partial_output_from_long_running_command(self) -> None:
         class PartialSession(FakeSession):

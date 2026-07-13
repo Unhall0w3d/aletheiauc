@@ -187,6 +187,7 @@ class HtmlReportBuilder:
         cuc_inventory_section = self._cuc_inventory_section(report)
         cuc_configuration_section = self._cuc_configuration_section(report)
         cuc_platform_section = self._cuc_platform_section(report)
+        cuc_informix_section = self._cuc_informix_section(report)
         cluster_section = self._cluster_section(report)
         node_rows = self._node_rows(report)
         device_rows = self._device_rows(report)
@@ -659,6 +660,7 @@ class HtmlReportBuilder:
     {cuc_inventory_section}
     {cuc_configuration_section}
     {cuc_platform_section}
+    {cuc_informix_section}
     {coverage_section}
     {cluster_section}
     <section>
@@ -1965,7 +1967,11 @@ class HtmlReportBuilder:
         configuration = [
             item
             for item in report.facts.configuration_objects
-            if item.source.startswith("CUC.CUPI") and not item.object_type.endswith("Inventory")
+            if item.source in {"CUC.INFORMIX.SQL"}
+            or (
+                item.source.startswith("CUC.CUPI")
+                and not item.object_type.endswith("Inventory")
+            )
         ]
         if not configuration:
             return ""
@@ -2004,14 +2010,47 @@ class HtmlReportBuilder:
         return f"""
     <section class="technology-section cuc-section">
       <h2>Unity Connection Configuration</h2>
-      <p class="meta">Source: bounded, read-only CUPI GET requests. Only reviewed non-secret
-      fields are normalized; mailbox identities, addresses, credentials, and message content
-      are excluded.</p>
+      <p class="meta">Source: bounded, read-only CUPI GET requests and diagnostic-only fixed
+      Informix SELECT probes. Experimental SQL-derived records are explicitly labeled. Only
+      reviewed non-secret fields are normalized; mailbox identities, credentials, and message
+      content are excluded.</p>
       <table><thead><tr><th>Configuration area</th><th>Records</th></tr></thead>
       <tbody>{summary_rows}</tbody></table>
       <details><summary>Show Unity Connection configuration details</summary>
       <div class="table-scroll"><table><thead><tr><th>Type</th><th>Name</th><th>Occurrences</th><th>Configuration</th></tr></thead>
       <tbody>{detail_rows}</tbody></table></div></details>
+</section>
+"""
+
+    def _cuc_informix_section(self, report: AssessmentReport) -> str:
+        checks = [
+            item for item in report.facts.platform_checks
+            if item.source == "CUC.INFORMIX.SQL"
+        ]
+        if not checks:
+            return ""
+        labels = {
+            "cuc.sql.duplicate_extensions": "Duplicate directory extensions",
+            "cuc.sql.alternate_contact_transfers": "Alternate-contact transfers",
+            "cuc.sql.system_transfer_targets": "System-transfer targets",
+        }
+        rows = "".join(
+            "<tr>"
+            f"<td>{escape(labels.get(item.check_name, item.check_name))}</td>"
+            f"<td>{escape(item.status)}</td>"
+            f"<td>{escape(display_text(item.details.get('rows_normalized')))}</td>"
+            f"<td>{escape(display_text(item.details.get('row_limit')))}</td>"
+            "</tr>"
+            for item in checks
+        )
+        return f"""
+    <section class="technology-section cuc-section">
+      <h2>Unity Connection Experimental SQL Validation</h2>
+      <p class="meta">Diagnostic-only validation using fixed, read-only
+      <code>SELECT FIRST 100</code> queries against <code>unitydirdb</code> on the publisher.
+      Schema errors and timeouts are reported as collection limitations, not health failures.</p>
+      <table><thead><tr><th>Probe</th><th>Status</th><th>Rows</th><th>Limit</th></tr></thead>
+      <tbody>{rows}</tbody></table>
     </section>
 """
 
