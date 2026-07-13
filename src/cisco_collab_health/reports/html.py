@@ -175,10 +175,32 @@ class HtmlReportBuilder:
         collector_issues_section = self._collector_issues_section(report)
         collector_notes_section = self._collector_notes_section(report)
         collector_evidence_section = self._collector_evidence_section(report)
-        finding_sections = "\n".join(self._finding_section(finding) for finding in report.findings)
-        if not finding_sections:
-            finding_sections = "<p>No findings generated.</p>"
-        findings_section = f"<section class=\"findings-section\"><h2>Priority Findings</h2>{finding_sections}</section>"
+        priority_findings = [
+            finding
+            for finding in report.findings
+            if finding.severity in {FindingSeverity.CRITICAL, FindingSeverity.WARNING}
+        ]
+        observations = [
+            finding for finding in report.findings if finding.severity == FindingSeverity.INFO
+        ]
+        priority_sections = "\n".join(self._finding_section(finding) for finding in priority_findings)
+        if not priority_sections:
+            priority_sections = (
+                "<p>No critical or warning findings were identified in the collected data.</p>"
+            )
+        observations_section = ""
+        if observations:
+            observation_cards = "\n".join(self._finding_section(finding) for finding in observations)
+            observations_section = f"""
+      <details class=\"finding-observations\">
+        <summary>Assessment observations ({len(observations)})</summary>
+        {observation_cards}
+      </details>"""
+        findings_section = (
+            f"<section class=\"findings-section\"><h2>Priority Findings</h2>"
+            f"<p class=\"meta finding-intro\">Issues below need attention. Each includes what was found, why it matters, and the recommended next step.</p>"
+            f"{priority_sections}{observations_section}</section>"
+        )
         certificate_summary = self._certificate_summary(report)
 
         return f"""<!doctype html>
@@ -398,6 +420,8 @@ class HtmlReportBuilder:
     .finding.info {{
       border-left-color: var(--info);
     }}
+    .finding-observations {{ margin: 18px 20px 0; }}
+    .finding-observations .finding {{ margin-left: 0; margin-right: 0; }}
     .meta {{
       color: var(--muted);
       font-size: 14px;
@@ -2260,24 +2284,15 @@ class HtmlReportBuilder:
 
     def _finding_section(self, finding: HealthFinding) -> str:
         severity = escape(finding.severity.value)
-        facts = (
-            "<li>Detailed facts omitted from customer-safe report.</li>"
-            if self.customer_safe
-            else "\n".join(f"<li>{escape(fact)}</li>" for fact in finding.facts)
-        )
+        facts = "\n".join(f"<li>{escape(fact)}</li>" for fact in finding.facts)
         recommendation = ""
         if finding.recommendation:
             escaped_recommendation = escape(finding.recommendation)
-            recommendation = f"<p><strong>Recommendation:</strong> {escaped_recommendation}</p>"
+            recommendation = f"<p><strong>Recommended next step:</strong> {escaped_recommendation}</p>"
         evidence = self._evidence_list(finding)
-        finding_metadata = (
-            f"Severity: {severity}"
-            if self.customer_safe
-            else (
-                f"Rule: {escape(finding.rule_id)} | Severity: {severity} | "
-                f"Type: {escape(finding.recommendation_kind.value)}"
-            )
-        )
+        finding_metadata = f"Priority: {self._finding_priority_label(finding.severity)}"
+        if not self.customer_safe:
+            finding_metadata += f" | Severity: {severity}"
 
         return f"""
       <article class="finding {severity}">
@@ -2285,8 +2300,8 @@ class HtmlReportBuilder:
         <div class="meta">
           {finding_metadata}
         </div>
-        <p><strong>Reasoning:</strong> {escape(finding.reasoning)}</p>
-        <p><strong>Facts:</strong></p>
+        <p><strong>Why it matters:</strong> {escape(finding.reasoning)}</p>
+        <p><strong>What we found:</strong></p>
         <ul class="facts">
           {facts}
         </ul>
@@ -2299,7 +2314,7 @@ class HtmlReportBuilder:
         if not finding.evidence:
             return ""
         if self.customer_safe:
-            return "<p><strong>Evidence:</strong> Collection evidence was captured for this finding.</p>"
+            return ""
 
         items = []
         for evidence in finding.evidence:
@@ -2318,11 +2333,21 @@ class HtmlReportBuilder:
             )
 
         return f"""
-        <p><strong>Evidence:</strong></p>
-        <ul class="facts">
-          {"".join(items)}
-        </ul>
+        <details class="finding-evidence">
+          <summary>Technical collection detail</summary>
+          <ul class="facts">
+            {"".join(items)}
+          </ul>
+        </details>
 """
+
+    @staticmethod
+    def _finding_priority_label(severity: FindingSeverity) -> str:
+        if severity == FindingSeverity.CRITICAL:
+            return "Action required"
+        if severity == FindingSeverity.WARNING:
+            return "Attention recommended"
+        return "For awareness"
 
     def _identifier(self, value: object | None, kind: str) -> str:
         text = display_text(value)

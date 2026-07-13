@@ -268,8 +268,9 @@ class FirmwareDownloadRule:
                     title="Firmware downloads failed and devices are not running the intended load",
                     severity=FindingSeverity.WARNING,
                     reasoning=(
-                        "RISPort reports a failed download and the active firmware does not match "
-                        "the configured static override or current Device Default."
+                        "Some devices report a failed firmware download and are running a "
+                        "different version from the one assigned to them. This can create "
+                        "inconsistent features, behavior, and supportability."
                     ),
                 )
             )
@@ -305,8 +306,9 @@ def _firmware_download_finding(
         facts=[f"Devices: {len(registrations)}", *[f"{reason}: {count}" for reason, count in sorted(reasons.items())]],
         reasoning=reasoning,
         recommendation=(
-            "Review TFTP availability, firmware files, device configuration, and the detailed "
-            "firmware exception table."
+            "Confirm the intended device firmware, then have the UC administrator review TFTP "
+            "reachability, the firmware files, and the affected device configuration before "
+            "retrying the update."
         ),
         evidence=[EvidenceRef(source="RISPort70", operation="selectCmDeviceExt", confidence="high")],
     )
@@ -490,8 +492,14 @@ def _certificate_finding(
         rule_id=rule_id, title=title, severity=severity,
         recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
         facts=_certificate_occurrence_summaries(certificates),
-        reasoning="Certificate expiration can disrupt secured CUCM services and trust relationships.",
-        recommendation="Renew or replace affected certificates and validate the issuer chain before expiration.",
+        reasoning=(
+            "Expired or soon-to-expire certificates can interrupt secure services and integrations "
+            "that depend on trust between collaboration components."
+        ),
+        recommendation=(
+            "Have the UC administrator renew or replace the affected certificates, validate the "
+            "issuer chain, and confirm dependent services after the change."
+        ),
         evidence=[EvidenceRef(source="CertificateManagementREST", operation="snapshot_server", confidence="high")],
     )
 

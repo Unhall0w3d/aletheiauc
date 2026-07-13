@@ -11,6 +11,11 @@ from cisco_collab_health.collectors.base import CollectionResult, CollectorError
 from cisco_collab_health.collectors.sample import SampleCollector
 from cisco_collab_health.engine import AssessmentEngine
 from cisco_collab_health.models.evidence import EvidenceRef
+from cisco_collab_health.models.findings import (
+    FindingSeverity,
+    HealthFinding,
+    RecommendationKind,
+)
 from cisco_collab_health.models.assessment import AssessmentReport
 from cisco_collab_health.models.facts import (
     AssessmentFacts,
@@ -238,6 +243,49 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertNotIn("Yorktown-Voice", payload)
         self.assertNotIn("Yorktown-Call-Control", payload)
         self.assertNotIn("Collector Evidence", payload)
+
+    def test_priority_findings_use_plain_language_and_hide_customer_evidence_ledger(self) -> None:
+        finding = HealthFinding(
+            rule_id="certificates.expired",
+            title="One certificate is expired",
+            severity=FindingSeverity.CRITICAL,
+            recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+            facts=["tomcat certificate on cucm-pub: expired 4 days ago"],
+            reasoning="An expired certificate can interrupt secure services and integrations.",
+            recommendation="Have the UC administrator renew the certificate and validate services.",
+            evidence=[
+                EvidenceRef(
+                    source="CertificateManagementREST",
+                    operation="snapshot_server",
+                    node="cucm-pub",
+                )
+            ],
+        )
+        observation = HealthFinding(
+            rule_id="inventory.summary",
+            title="Inventory collected",
+            severity=FindingSeverity.INFO,
+            recommendation_kind=RecommendationKind.INFORMATIONAL,
+            facts=["Phones: 100"],
+            reasoning="Inventory was collected.",
+        )
+        report = AssessmentReport(
+            facts=AssessmentFacts(), collector_results=[], findings=[finding, observation]
+        )
+
+        engineering = HtmlReportBuilder().build(report)
+        customer = HtmlReportBuilder(customer_safe=True).build(report)
+
+        for payload in (engineering, customer):
+            self.assertIn("Why it matters:", payload)
+            self.assertIn("What we found:", payload)
+            self.assertIn("Recommended next step:", payload)
+            self.assertIn("tomcat certificate on cucm-pub: expired 4 days ago", payload)
+            self.assertIn("Assessment observations (1)", payload)
+            self.assertNotIn("Detailed facts omitted from customer-safe report.", payload)
+        self.assertIn("Technical collection detail", engineering)
+        self.assertNotIn("Collection evidence was captured for this finding.", customer)
+        self.assertNotIn("Technical collection detail", customer)
 
     def test_aletheiauc_header_shows_diagnostic_state(self) -> None:
         report = AssessmentReport(
