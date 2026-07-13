@@ -1828,6 +1828,7 @@ class HtmlReportBuilder:
         if not checks:
             return ""
         labels = {
+            "show status": "System status",
             "utils diagnose test": "Diagnostic tests",
             "utils service list": "Services",
             "show cuc cluster status": "Cluster replication",
@@ -1852,6 +1853,11 @@ class HtmlReportBuilder:
                 summary = f"{primary} primary; {secondary} secondary; {health}"
             elif check.check_name == "show network eth0 detail":
                 summary = f"Link {details.get('link_status', 'unknown')}; duplicate IP {details.get('duplicate_ip', 'unknown')}"
+            elif check.check_name == "show status":
+                summary = (
+                    f"Highest disk usage {details.get('max_disk_usage_percent', 'unknown')}%; "
+                    f"uptime {details.get('uptime_days', 'unknown')} days"
+                )
             else:
                 summary = "No core files found" if details.get("core_files") == "0" else "Core files present"
             rows.append(f"<tr><td>{escape(labels[check.check_name])}</td><td>{escape(check.status)}</td><td>{escape(summary)}</td></tr>")

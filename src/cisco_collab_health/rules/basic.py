@@ -634,6 +634,121 @@ class CucPlatformHealthRule:
         return findings
 
 
+class CucPlatformStatusRule:
+    """Evaluate normalized Unity Connection status data already captured over UCOS CLI."""
+
+    rule_id = "cuc.platform_status"
+
+    def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
+        checks = [
+            check
+            for check in facts.platform_checks
+            if check.source == "CUC.UCOS.CLI" and check.check_name == "show status"
+        ]
+        findings: list[HealthFinding] = []
+        for check in checks:
+            critical = int(check.details.get("disk_critical_count", "0"))
+            warning = int(check.details.get("disk_warning_count", "0"))
+            max_usage = check.details.get("max_disk_usage_percent", "unknown")
+            if critical:
+                findings.append(
+                    _cuc_finding(
+                        "disk_critical",
+                        FindingSeverity.CRITICAL,
+                        "Unity Connection disk usage is critically high",
+                        [f"Node: {check.node}", f"Highest partition usage: {max_usage}%"],
+                    )
+                )
+            elif warning:
+                findings.append(
+                    _cuc_finding(
+                        "disk_warning",
+                        FindingSeverity.WARNING,
+                        "Unity Connection disk usage needs attention",
+                        [f"Node: {check.node}", f"Highest partition usage: {max_usage}%"],
+                    )
+                )
+            uptime = check.details.get("uptime_days", "unknown")
+            if uptime.isdigit() and int(uptime) >= 365:
+                findings.append(
+                    HealthFinding(
+                        rule_id=f"{self.rule_id}.uptime",
+                        title="Unity Connection has been running for more than one year",
+                        severity=FindingSeverity.INFO,
+                        recommendation_kind=RecommendationKind.BEST_PRACTICE,
+                        facts=[f"Node: {check.node}", f"Reported uptime: {uptime} days"],
+                        reasoning=(
+                            "Long uptime is not itself a fault, but planned maintenance helps keep "
+                            "the platform current and validates a controlled restart path."
+                        ),
+                        recommendation=(
+                            "Review maintenance history and include this server in the next approved "
+                            "maintenance window if a restart is appropriate."
+                        ),
+                        evidence=[EvidenceRef(source="CUC.UCOS.CLI", operation="show_status", node=check.node)],
+                    )
+                )
+        return findings
+
+
+class CucServicePolicyRule:
+    """Apply conservative CUC publisher service expectations to normalized CLI facts."""
+
+    rule_id = "cuc.service_policy"
+    required_services = {
+        "A Cisco DB",
+        "A Cisco DB Replicator",
+        "Cisco Tomcat",
+        "Connection Conversation Manager",
+        "Connection Mixer",
+    }
+    singleton_services = {
+        "Connection Notifier",
+        "Connection Message Transfer Agent",
+        "Connection Mailbox Sync",
+    }
+
+    def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
+        services = [service for service in facts.services if service.source == "CUC.UCOS.CLI"]
+        if not services:
+            return []
+        by_name = {service.service_name: service for service in services}
+        failed_required = [
+            name for name in self.required_services
+            if name not in by_name or by_name[name].status.strip().lower() != "started"
+        ]
+        failed_singletons = [
+            name for name in self.singleton_services
+            if name in by_name and by_name[name].activated is not False
+            and by_name[name].status.strip().lower() != "started"
+        ]
+        if not failed_required and not failed_singletons:
+            return []
+        facts_list = []
+        if failed_required:
+            facts_list.append("Required services not started: " + ", ".join(sorted(failed_required)))
+        if failed_singletons:
+            facts_list.append("Expected singleton services not started: " + ", ".join(sorted(failed_singletons)))
+        return [
+            HealthFinding(
+                rule_id=self.rule_id,
+                title="Unity Connection services do not meet expected publisher policy",
+                severity=FindingSeverity.WARNING,
+                recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+                facts=facts_list,
+                reasoning=(
+                    "Core Unity Connection services should be started on the collected publisher. "
+                    "This check does not infer subscriber state from a publisher-only CLI session."
+                ),
+                recommendation=(
+                    "Confirm whether the stopped service is intentional. If not, review service "
+                    "dependencies and alarms in Unity Connection before starting or restarting it."
+                ),
+                evidence=[EvidenceRef(source="CUC.UCOS.CLI", operation="utils_service_list", confidence="high")],
+            )
+        ]
+
+
 def _cuc_finding(suffix: str, severity: FindingSeverity, title: str, facts: list[str]) -> HealthFinding:
     return HealthFinding(
         rule_id=f"cuc.platform_health.{suffix}", title=title, severity=severity,

@@ -13,6 +13,7 @@ from cisco_collab_health.collectors.cuc_platform import (
     CucPlatformCollector,
     _cuc_cluster_nodes,
     _cuc_cli_summary,
+    _cuc_service_status,
     _cuc_version,
 )
 from cisco_collab_health.models.runtime import CollectionContext
@@ -52,7 +53,26 @@ class CucPlatformCollectorTests(unittest.TestCase):
             "1",
         )
         self.assertEqual(_cuc_cli_summary("utils core active list", "No core files found")["core_files"], "0")
+        status = _cuc_cli_summary(
+            "show status",
+            "21:08:27 up 328 days, 5:41\nDisk/active 10K 1K 9K (90%)\nDisk/logging 10K 1K 9K (95%)",
+        )
+        self.assertEqual(status["max_disk_usage_percent"], "95")
+        self.assertEqual(status["disk_warning_count"], "2")
+        self.assertEqual(status["disk_critical_count"], "1")
+        self.assertEqual(status["uptime_days"], "328")
         self.assertEqual(_cuc_version("Active Master Version: 15.0.1.12900-43"), "15.0.1.12900-43")
+
+    def test_service_list_normalizes_states_and_intentional_inactive_reason(self) -> None:
+        services = _cuc_service_status(
+            "cuc-pub",
+            "A Cisco DB[STARTED]\nCisco DirSync[STOPPED] Service Not Activated",
+        )
+
+        self.assertEqual(services[0].status, "Started")
+        self.assertTrue(services[0].activated)
+        self.assertEqual(services[1].status, "Stopped")
+        self.assertFalse(services[1].activated)
 
     def test_network_cluster_output_normalizes_cuc_members(self) -> None:
         nodes = _cuc_cluster_nodes(

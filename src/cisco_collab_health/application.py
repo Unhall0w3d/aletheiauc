@@ -31,6 +31,8 @@ from cisco_collab_health.reports.summary import ExecutiveSummaryBuilder
 from cisco_collab_health.rules.basic import (
     ClusterIdentityRule,
     CucPlatformHealthRule,
+    CucPlatformStatusRule,
+    CucServicePolicyRule,
     CertificateValidityRule,
     CollectorHealthRule,
     ConfigurationInventorySummaryRule,
@@ -174,6 +176,8 @@ def run_assessment(
         rules=[
             ClusterIdentityRule(),
             CucPlatformHealthRule(),
+            CucPlatformStatusRule(),
+            CucServicePolicyRule(),
             CertificateValidityRule(),
             NodeReachabilityRule(),
             CollectorHealthRule(),
@@ -467,6 +471,8 @@ def _assessment_rules() -> list[HealthRule]:
     return [
         ClusterIdentityRule(),
         CucPlatformHealthRule(),
+        CucPlatformStatusRule(),
+        CucServicePolicyRule(),
         CertificateValidityRule(),
         NodeReachabilityRule(),
         CollectorHealthRule(),

@@ -13,6 +13,7 @@ from cisco_collab_health.models.facts import (
     ClusterIdentity,
     CollaborationNode,
     PlatformCheckFact,
+    ServiceStatusFact,
 )
 from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.transport.ssh import SshCommandResult, SshCommandTimeout, UcosSshSession
@@ -109,6 +110,8 @@ class CucPlatformCollector:
                     if command == "show version active":
                         version = _cuc_version(result.output)
                     command_output[command] = result.output
+                    if command == "utils service list":
+                        facts.services.extend(_cuc_service_status(node, result.output))
                     facts.platform_checks.append(
                         PlatformCheckFact(
                             node=node,
@@ -168,7 +171,41 @@ def _cuc_cli_summary(command: str, output: str) -> dict[str, str]:
             "link_status": status.group(1).lower() if status else "unknown",
             "duplicate_ip": duplicate.group(1).lower() if duplicate else "unknown",
         }
+    if command == "show status":
+        disk_usage = [
+            int(match.group(1))
+            for match in re.finditer(r"(?m)^Disk/\S+.*?\((\d+)%\)", output)
+        ]
+        uptime = re.search(r"\bup\s+(\d+)\s+days?", output, re.IGNORECASE)
+        uptime_days = int(uptime.group(1)) if uptime else None
+        return {
+            "max_disk_usage_percent": str(max(disk_usage)) if disk_usage else "unknown",
+            "disk_warning_count": str(sum(value >= 90 for value in disk_usage)),
+            "disk_critical_count": str(sum(value >= 95 for value in disk_usage)),
+            "uptime_days": str(uptime_days) if uptime_days is not None else "unknown",
+        }
     return {}
+
+
+def _cuc_service_status(node: str, output: str) -> list[ServiceStatusFact]:
+    """Normalize UCOS service-list entries without treating inactive services as failures."""
+
+    services: list[ServiceStatusFact] = []
+    pattern = re.compile(r"(?m)^(?P<name>.+?)\[(?P<state>STARTED|STOPPED)\](?P<detail>.*)$")
+    for match in pattern.finditer(output):
+        detail = match.group("detail").strip()
+        services.append(
+            ServiceStatusFact(
+                node=node,
+                service_name=match.group("name").strip(),
+                activated="service not activated" not in detail.lower(),
+                status=match.group("state").title(),
+                uptime_seconds=None,
+                source="CUC.UCOS.CLI",
+                reason=detail or None,
+            )
+        )
+    return services
 
 
 def _cuc_version(output: str) -> str | None:

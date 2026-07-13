@@ -19,6 +19,8 @@ from cisco_collab_health.models.findings import FindingSeverity
 from cisco_collab_health.rules.basic import (
     CollectorHealthRule,
     CertificateValidityRule,
+    CucPlatformStatusRule,
+    CucServicePolicyRule,
     DeviceInventorySummaryRule,
     DeviceLoadRule,
     DeviceLoadSummaryRule,
@@ -55,6 +57,50 @@ class FirmwareDownloadRuleTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
         self.assertIn("File Not Found: 1", findings[0].facts)
+
+
+class CucPlatformRulesTests(unittest.TestCase):
+    def test_disk_and_long_uptime_findings_are_derived_from_cuc_show_status(self) -> None:
+        findings = CucPlatformStatusRule().evaluate(
+            AssessmentFacts(
+                platform_checks=[
+                    PlatformCheckFact(
+                        node="cuc-pub",
+                        check_name="show status",
+                        status="collected",
+                        details={
+                            "max_disk_usage_percent": "95",
+                            "disk_warning_count": "1",
+                            "disk_critical_count": "1",
+                            "uptime_days": "400",
+                        },
+                        source="CUC.UCOS.CLI",
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual([finding.severity for finding in findings], [FindingSeverity.CRITICAL, FindingSeverity.INFO])
+        self.assertIn("Highest partition usage: 95%", findings[0].facts)
+
+    def test_cuc_service_policy_flags_missing_required_service_but_not_inactive_optional_service(self) -> None:
+        findings = CucServicePolicyRule().evaluate(
+            AssessmentFacts(
+                services=[
+                    ServiceStatusFact("cuc-pub", "A Cisco DB", True, "Started", None, "CUC.UCOS.CLI"),
+                    ServiceStatusFact("cuc-pub", "A Cisco DB Replicator", True, "Started", None, "CUC.UCOS.CLI"),
+                    ServiceStatusFact("cuc-pub", "Cisco Tomcat", True, "Started", None, "CUC.UCOS.CLI"),
+                    ServiceStatusFact("cuc-pub", "Connection Conversation Manager", True, "Stopped", None, "CUC.UCOS.CLI"),
+                    ServiceStatusFact("cuc-pub", "Connection Mixer", True, "Started", None, "CUC.UCOS.CLI"),
+                    ServiceStatusFact("cuc-pub", "Connection Mailbox Sync", False, "Stopped", None, "CUC.UCOS.CLI"),
+                ]
+            )
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
+        self.assertIn("Connection Conversation Manager", findings[0].facts[0])
+        self.assertNotIn("Connection Mailbox Sync", " ".join(findings[0].facts))
 
 
 class CertificateValidityRuleTests(unittest.TestCase):
