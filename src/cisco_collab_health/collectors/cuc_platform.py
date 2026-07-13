@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from cisco_collab_health.collectors.base import CollectionResult
@@ -66,78 +66,88 @@ class CucPlatformCollector:
         facts = AssessmentFacts()
         warnings: list[str] = []
         version: str | None = None
-        command_output: dict[str, str] = {}
-        node = context.publisher_ip or context.target
-        if not node:
+        publisher = context.publisher_ip or context.target
+        if not publisher:
             return CollectionResult(self.name, facts, warnings=["CUC target is missing."])
+        cluster_output = self._collect_cluster_listing(context, publisher, facts, warnings)
+        for cluster_node in _cuc_cluster_nodes(cluster_output, target_id=context.target_id):
+            facts.add_node(cluster_node)
+        nodes = tuple(dict.fromkeys(context.discovered_nodes or tuple(
+            item.address or item.name for item in facts.nodes
+        ) or (publisher,)))
+        for node in filter(None, nodes):
+            node_version = self._collect_node(
+                replace(context, target=node, publisher_ip=node), node, facts, warnings
+            )
+            if node == publisher and node_version:
+                version = node_version
+        if version:
+            facts.cluster = ClusterIdentity(publisher, "Cisco Unity Connection", version)
+        return CollectionResult(self.name, facts, warnings=warnings)
+
+    def _collect_cluster_listing(
+        self, context: CollectionContext, node: str, facts: AssessmentFacts, warnings: list[str]
+    ) -> str:
+        """Discover CUC members before collecting platform evidence from each member."""
+
+        definition = next(item for item in CUC_COMMAND_CATALOG if item.command == "show network cluster")
+        try:
+            with self.session_factory(context) as session:
+                result = session.execute(definition.command, timeout_seconds=definition.timeout_seconds)
+        except Exception as exc:
+            warnings.append(f"CUC SSH session failed on {node}: {exc}")
+            return ""
+        if context.artifact_store is not None:
+            context.artifact_store.write_command_output(node, definition.command, result.output)
+        facts.platform_checks.append(_cuc_check(node, definition, "collected", result.output, result.paged))
+        return result.output
+
+    def _collect_node(
+        self, context: CollectionContext, node: str, facts: AssessmentFacts, warnings: list[str]
+    ) -> str | None:
+        version: str | None = None
         try:
             with self.session_factory(context) as session:
                 for definition in CUC_COMMAND_CATALOG:
-                    command = definition.command
+                    if definition.command == "show network cluster":
+                        continue
                     try:
-                        result = session.execute(command, timeout_seconds=definition.timeout_seconds)
+                        result = session.execute(definition.command, timeout_seconds=definition.timeout_seconds)
                     except SshCommandTimeout as exc:
-                        partial_output = exc.output
-                        if context.artifact_store is not None and partial_output:
-                            context.artifact_store.write_command_output(node, command, partial_output)
-                        facts.platform_checks.append(
-                            PlatformCheckFact(
-                                node=node,
-                                check_name=command,
-                                status="incomplete",
-                                details={
-                                    "output_captured": str(bool(partial_output)).lower(),
-                                    "output_length": str(len(partial_output)),
-                                    "paged": str(exc.paged).lower(),
-                                    "completion": "prompt timeout",
-                                    "timeout_seconds": str(
-                                        definition.timeout_seconds
-                                    ),
-                                },
-                                source="CUC.UCOS.CLI",
-                            )
-                        )
-                        warnings.append(
-                            f"CUC CLI '{command}' did not return to the prompt; "
-                            f"retained {len(partial_output)} characters of partial output."
-                        )
+                        if context.artifact_store is not None and exc.output:
+                            context.artifact_store.write_command_output(node, definition.command, exc.output)
+                        facts.platform_checks.append(_cuc_check(node, definition, "incomplete", exc.output, exc.paged, incomplete=True))
+                        warnings.append(f"CUC CLI '{definition.command}' on {node} did not return to the prompt; retained {len(exc.output)} characters of partial output.")
                         continue
                     except Exception as exc:
-                        warnings.append(f"CUC CLI '{command}' failed: {exc}")
+                        warnings.append(f"CUC CLI '{definition.command}' on {node} failed: {exc}")
                         continue
                     if context.artifact_store is not None:
-                        context.artifact_store.write_command_output(node, command, result.output)
-                    if command == "show version active":
+                        context.artifact_store.write_command_output(node, definition.command, result.output)
+                    if definition.command == "show version active":
                         version = _cuc_version(result.output)
-                    command_output[command] = result.output
-                    if command == "utils service list":
+                    if definition.command == "utils service list":
                         facts.services.extend(_cuc_service_status(node, result.output))
-                    facts.platform_checks.append(
-                        PlatformCheckFact(
-                            node=node,
-                            check_name=command,
-                            status="collected",
-                            details={
-                                "output_captured": "true",
-                                "output_length": str(len(result.output)),
-                                "paged": str(result.paged).lower(),
-                                "command_id": definition.command_id,
-                                "timeout_seconds": str(definition.timeout_seconds),
-                                "diagnostic_only": str(definition.diagnostic_only).lower(),
-                                **_cuc_cli_summary(command, result.output),
-                            },
-                            source="CUC.UCOS.CLI",
-                        )
-                    )
+                    facts.platform_checks.append(_cuc_check(node, definition, "collected", result.output, result.paged))
         except Exception as exc:
-            warnings.append(f"CUC SSH session failed: {exc}")
-        if version:
-            facts.cluster = ClusterIdentity(node, "Cisco Unity Connection", version)
-        for cluster_node in _cuc_cluster_nodes(
-            command_output.get("show network cluster", ""), target_id=context.target_id
-        ):
-            facts.add_node(cluster_node)
-        return CollectionResult(self.name, facts, warnings=warnings)
+            warnings.append(f"CUC SSH session failed on {node}: {exc}")
+        return version
+
+
+def _cuc_check(
+    node: str, definition: UcosCommand, status: str, output: str, paged: bool,
+    *, incomplete: bool = False,
+) -> PlatformCheckFact:
+    return PlatformCheckFact(
+        node=node, check_name=definition.command, status=status,
+        details={
+            "output_captured": str(bool(output)).lower(), "output_length": str(len(output)),
+            "paged": str(paged).lower(), "completion": "prompt timeout" if incomplete else "complete",
+            "command_id": definition.command_id, "timeout_seconds": str(definition.timeout_seconds),
+            "diagnostic_only": str(definition.diagnostic_only).lower(),
+            **_cuc_cli_summary(definition.command, output),
+        }, source="CUC.UCOS.CLI",
+    )
 
 
 def _cuc_cli_summary(command: str, output: str) -> dict[str, str]:

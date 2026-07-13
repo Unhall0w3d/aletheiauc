@@ -115,7 +115,9 @@ class HtmlReportBuilder:
             else ""
         )
         logo_image = _comsource_asset_data_uri("ComSource_Logo.svg") if is_comsource else ""
-        emblem_image = "" if is_comsource else hero_image
+        # The hero artwork already carries the visual identity. Avoid embedding that
+        # multi-megabyte image a second time as a decorative section watermark.
+        emblem_image = "none"
         template_css = (
             self._comsource_css()
             if is_comsource
@@ -785,8 +787,8 @@ class HtmlReportBuilder:
     </section>
     <section>
       <h2>Certificate Validity and Trust</h2>
-      <p class="meta">Source: per-node UC Certificate Management REST snapshots. Detail is limited to expired,
-      and 60-day expiry-window certificates. Optional trust stores are evaluated when present.</p>
+      <p class="meta">Source: per-node UC Certificate Management REST snapshots. Active service certificates and
+      trust-store entries are presented separately: trust entries need review but do not alone establish an outage.</p>
       {certificate_summary}
       <div class="table-scroll"><table>
         <thead><tr><th>Node</th><th>Certificate</th><th>Service/Store</th><th>Kind</th>
@@ -2029,14 +2031,18 @@ class HtmlReportBuilder:
         ]
         if not selected:
             return ""
-        expired = sum(1 for item in selected if item.days_remaining is not None and item.days_remaining < 0)
-        expiring = len(selected) - expired
-        stores = sorted({item.service or item.store or "Unclassified store" for item in selected})
+        identity = [item for item in selected if item.certificate_kind == "identity"]
+        trust = [item for item in selected if item.certificate_kind != "identity"]
+        identity_expired = sum(item.days_remaining < 0 for item in identity if item.days_remaining is not None)
+        identity_expiring = len(identity) - identity_expired
+        trust_expired = sum(item.days_remaining < 0 for item in trust if item.days_remaining is not None)
+        trust_expiring = len(trust) - trust_expired
         earliest = min(item.days_remaining for item in selected if item.days_remaining is not None)
         return (
             '<p class="meta"><strong>Certificate attention summary:</strong> '
-            f"{expired} expired; {expiring} expiring within 60 days; "
-            f"earliest expiry {earliest} days; affected stores: {escape(', '.join(stores))}.</p>"
+            f"service certificates — {identity_expired} expired, {identity_expiring} expiring within 60 days; "
+            f"trust entries — {trust_expired} expired, {trust_expiring} expiring within 60 days; "
+            f"earliest expiry {earliest} days.</p>"
         )
 
     def _collector_issues_section(self, report: AssessmentReport) -> str:

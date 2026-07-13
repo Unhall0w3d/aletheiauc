@@ -136,9 +136,30 @@ class CollectorHealthRule:
         if not facts.collector_issues:
             return []
 
-        has_error = any(issue.issue_type == "error" for issue in facts.collector_issues)
+        ssh_issues = [
+            issue for issue in facts.collector_issues
+            if "SSH session failed on" in issue.message
+        ]
+        remaining = [issue for issue in facts.collector_issues if issue not in ssh_issues]
+        findings: list[HealthFinding] = []
+        if ssh_issues:
+            nodes = sorted({issue.message.split("SSH session failed on ", 1)[1].split(":", 1)[0] for issue in ssh_issues})
+            findings.append(HealthFinding(
+                rule_id=f"{self.rule_id}.platform_coverage",
+                title="Platform checks were not collected from one or more nodes",
+                severity=FindingSeverity.WARNING,
+                recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+                facts=[f"Nodes without platform CLI evidence: {len(nodes)}", f"Affected nodes: {', '.join(nodes)}"],
+                reasoning="The assessment completed its available API collection, but platform CLI evidence is incomplete for the listed nodes.",
+                recommendation="Verify each node's SSH host key out of band, enroll it with the explicit first-use option, then rerun diagnostic capture to complete platform coverage.",
+                evidence=[EvidenceRef(source=issue.source, operation="collector_health", confidence="high") for issue in ssh_issues],
+            ))
+        if not remaining:
+            return findings
+
+        has_error = any(issue.issue_type == "error" for issue in remaining)
         severity = FindingSeverity.CRITICAL if has_error else FindingSeverity.WARNING
-        return [
+        findings.append(
             HealthFinding(
                 rule_id=self.rule_id,
                 title="One or more collectors reported issues",
@@ -146,7 +167,7 @@ class CollectorHealthRule:
                 recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
                 facts=[
                     f"{issue.collector_name}: {issue.issue_type}: {issue.message}"
-                    for issue in facts.collector_issues
+                    for issue in remaining
                 ],
                 reasoning=(
                     "Collector warnings or failures can make the assessment incomplete or reduce "
@@ -162,10 +183,11 @@ class CollectorHealthRule:
                         operation="collector_health",
                         confidence="high",
                     )
-                    for issue in facts.collector_issues
+                    for issue in remaining
                 ],
             )
-        ]
+        )
+        return findings
 
 
 class DeviceLoadRule:
@@ -303,7 +325,11 @@ def _firmware_download_finding(
             RecommendationKind.ENGINEERING_RECOMMENDATION
             if severity == FindingSeverity.WARNING else RecommendationKind.INFORMATIONAL
         ),
-        facts=[f"Devices: {len(registrations)}", *[f"{reason}: {count}" for reason, count in sorted(reasons.items())]],
+        facts=[
+            f"Devices: {len(registrations)}",
+            f"Affected devices: {', '.join(sorted(item.name for item in registrations)[:20])}",
+            *[f"{reason}: {count}" for reason, count in sorted(reasons.items())],
+        ],
         reasoning=reasoning,
         recommendation=(
             "Confirm the intended device firmware, then have the UC administrator review TFTP "
@@ -522,43 +548,61 @@ class CertificateValidityRule:
     def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
         if not facts.certificates:
             return []
-        expired = [
+        expired_identity = [
             item for item in facts.certificates
-            if item.days_remaining is not None and item.days_remaining < 0
+            if item.certificate_kind == "identity" and item.days_remaining is not None and item.days_remaining < 0
         ]
-        soon = [
+        soon_identity = [
             item for item in facts.certificates
-            if item.days_remaining is not None and 0 <= item.days_remaining <= 60
+            if item.certificate_kind == "identity" and item.days_remaining is not None and 0 <= item.days_remaining <= 60
         ]
-        findings = []
-        if expired:
+        expired_trust = [
+            item for item in facts.certificates
+            if item.certificate_kind != "identity" and item.days_remaining is not None and item.days_remaining < 0
+        ]
+        soon_trust = [
+            item for item in facts.certificates
+            if item.certificate_kind != "identity" and item.days_remaining is not None and 0 <= item.days_remaining <= 60
+        ]
+        findings: list[HealthFinding] = []
+        if expired_identity:
             findings.append(_certificate_finding(
-                f"{self.rule_id}.expired", "One or more certificates are expired",
-                FindingSeverity.CRITICAL, expired,
+                f"{self.rule_id}.identity_expired", "One or more active service certificates are expired",
+                FindingSeverity.CRITICAL, expired_identity, "identity",
             ))
-        if soon:
+        if soon_identity:
             findings.append(_certificate_finding(
-                f"{self.rule_id}.expiring", "One or more certificates expire within 60 days",
-                FindingSeverity.WARNING, soon,
+                f"{self.rule_id}.identity_expiring", "One or more active service certificates expire within 60 days",
+                FindingSeverity.WARNING, soon_identity, "identity",
+            ))
+        if expired_trust:
+            findings.append(_certificate_finding(
+                f"{self.rule_id}.trust_expired", "Expired trust certificates should be reviewed",
+                FindingSeverity.WARNING, expired_trust, "trust",
+            ))
+        if soon_trust:
+            findings.append(_certificate_finding(
+                f"{self.rule_id}.trust_expiring", "Trust certificates expire within 60 days",
+                FindingSeverity.INFO, soon_trust, "trust",
             ))
         return findings
 
 
 def _certificate_finding(
-    rule_id: str, title: str, severity: FindingSeverity, certificates: list[CertificateFact],
+    rule_id: str, title: str, severity: FindingSeverity, certificates: list[CertificateFact], certificate_scope: str,
 ) -> HealthFinding:
+    if certificate_scope == "identity":
+        reasoning = "An active service certificate is expired or approaching expiry and can interrupt secure UC services or integrations."
+        recommendation = "Have the UC administrator renew or replace the affected service certificates, validate dependent services, and confirm trust after the change."
+    else:
+        reasoning = "Trust-store entries can remain after a peer certificate is replaced. Their presence does not by itself prove an active service outage."
+        recommendation = "Review the affected trust entries against the current UC topology and integrations. Remove or replace only entries confirmed obsolete or required by an expiring peer certificate."
     return HealthFinding(
         rule_id=rule_id, title=title, severity=severity,
         recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
         facts=_certificate_occurrence_summaries(certificates),
-        reasoning=(
-            "Expired or soon-to-expire certificates can interrupt secure services and integrations "
-            "that depend on trust between collaboration components."
-        ),
-        recommendation=(
-            "Have the UC administrator renew or replace the affected certificates, validate the "
-            "issuer chain, and confirm dependent services after the change."
-        ),
+        reasoning=reasoning,
+        recommendation=recommendation,
         evidence=[EvidenceRef(source="CertificateManagementREST", operation="snapshot_server", confidence="high")],
     )
 

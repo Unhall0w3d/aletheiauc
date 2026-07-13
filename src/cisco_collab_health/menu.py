@@ -401,6 +401,10 @@ def _configure_collection(args: argparse.Namespace) -> None:
         args.diagnostic_axl_max_records = _positive_integer(
             "Diagnostic AXL maximum records", args.diagnostic_axl_max_records
         )
+        args.accept_new_host_key = _yes_no(
+            "After verifying fingerprints out of band, enroll newly discovered UCOS SSH host keys?",
+            default=args.accept_new_host_key,
+        )
 
 
 def _configure_network(args: argparse.Namespace) -> None:

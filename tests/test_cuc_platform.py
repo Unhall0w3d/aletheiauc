@@ -100,9 +100,36 @@ class CucPlatformCollectorTests(unittest.TestCase):
                 session_factory=lambda context: FakeSession(context, commands)
             ).collect(CollectionContext(publisher_ip="192.0.2.20", artifact_store=artifacts))
 
-            self.assertEqual(commands, list(CUC_SAFE_CLI_COMMANDS))
+            self.assertEqual(
+                commands,
+                ["show network cluster", *[
+                    command for command in CUC_SAFE_CLI_COMMANDS
+                    if command != "show network cluster"
+                ]],
+            )
             self.assertEqual(len(result.facts.platform_checks), len(CUC_SAFE_CLI_COMMANDS))
             self.assertEqual(len(list(artifacts.root.rglob("*.txt"))), len(CUC_SAFE_CLI_COMMANDS))
+
+    def test_collector_applies_platform_catalog_to_discovered_cuc_members(self) -> None:
+        commands: list[str] = []
+
+        class ClusterSession(FakeSession):
+            def execute(self, command: str, *, timeout_seconds: int | None = None) -> SshCommandResult:
+                self.commands.append(f"{self.context.publisher_ip}:{command}")
+                if command == "show network cluster":
+                    return SshCommandResult(command, "192.0.2.20 cuc-pub.example cuc-pub Publisher\n192.0.2.21 cuc-sub.example cuc-sub Subscriber")
+                return SshCommandResult(command, f"output for {command}")
+
+            def __init__(self, context: CollectionContext, commands: list[str]) -> None:
+                self.context = context
+                self.commands = commands
+
+        result = CucPlatformCollector(
+            session_factory=lambda context: ClusterSession(context, commands)
+        ).collect(CollectionContext(publisher_ip="192.0.2.20"))
+
+        self.assertIn("192.0.2.21:show status", commands)
+        self.assertEqual(len(result.facts.platform_checks), 1 + (len(CUC_SAFE_CLI_COMMANDS) - 1) * 2)
 
     def test_collector_retains_partial_output_from_long_running_command(self) -> None:
         class PartialSession(FakeSession):

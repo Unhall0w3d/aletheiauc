@@ -58,6 +58,7 @@ class FirmwareDownloadRuleTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
         self.assertIn("File Not Found: 1", findings[0].facts)
+        self.assertIn("Affected devices: SEP001", findings[0].facts)
 
 
 class CucPlatformRulesTests(unittest.TestCase):
@@ -136,6 +137,22 @@ class CertificateValidityRuleTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, FindingSeverity.CRITICAL)
         self.assertEqual(len(findings), 1)
         self.assertIn("CallManager.pem [CallManager] on pub", findings[0].facts[0])
+
+    def test_expired_trust_certificate_is_not_reported_as_service_outage(self) -> None:
+        fact = CertificateFact(
+            node="pub", name="old-peer.pem", service="tomcat-trust", store="tomcat-trust",
+            certificate_kind="trust", subject="CN=old-peer", issuer="CN=old-peer", serial_number="2",
+            valid_from=None, valid_until="2020-01-01T00:00:00Z", days_remaining=-1,
+            self_signed=True, key_type="RSA", key_size="2048", signature_algorithm="SHA256",
+            subject_key_identifier=None, authority_key_identifier=None, intermediate=None,
+            root="CN=old-peer", chain_status="self-signed", source="fixture",
+        )
+
+        finding = CertificateValidityRule().evaluate(AssessmentFacts(certificates=[fact]))[0]
+
+        self.assertEqual(finding.severity, FindingSeverity.WARNING)
+        self.assertIn("trust", finding.rule_id)
+        self.assertIn("does not by itself prove", finding.reasoning)
 
     def test_download_failure_with_intended_active_load_is_informational(self) -> None:
         facts = AssessmentFacts(
@@ -243,6 +260,14 @@ class CollectorHealthRuleTests(unittest.TestCase):
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].severity, FindingSeverity.CRITICAL)
+
+    def test_platform_ssh_coverage_has_a_specific_actionable_finding(self) -> None:
+        finding = CollectorHealthRule().evaluate(AssessmentFacts(collector_issues=[
+            CollectorIssueFact("cucm", "warning", "cucm_platform_cli: CUCM SSH session failed on cucm-sub: Server not found in known_hosts"),
+        ]))[0]
+
+        self.assertEqual(finding.title, "Platform checks were not collected from one or more nodes")
+        self.assertIn("Affected nodes: cucm-sub", finding.facts)
 
 
 class DeviceLoadRuleTests(unittest.TestCase):

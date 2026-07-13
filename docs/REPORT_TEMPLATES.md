@@ -40,3 +40,9 @@ They do not use synthetic data; instead they mask saved target/profile labels
 and private artifact paths, preserve operational node, device, and address data
 needed for customer understanding, omit detailed technical evidence inventories,
 and retain the findings and summarized collection coverage needed for review.
+
+The standalone AletheiaUC report embeds only the artwork it actively renders;
+the hero image is not duplicated as a section watermark. This keeps the report
+self-contained while avoiding unnecessary bundle growth. Active service
+certificates and trust-store entries are summarized separately so stale trust
+entries are not presented as proof of an outage.

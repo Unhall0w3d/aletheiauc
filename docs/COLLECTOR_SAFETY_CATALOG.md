@@ -46,3 +46,8 @@ database-replication runtime state, active core files, and service list. The
 collector retains raw output and only promotes conservative NTP, DRS,
 replication, and core-file conditions into findings. Fresh CUCM artifacts remain
 required to validate output variants and thresholds before expanding this pilot.
+
+CUC first obtains its bounded `show network cluster` listing from the publisher,
+then applies its read-only platform catalog to each discovered cluster member.
+An unknown SSH host key remains rejected unless the operator explicitly enables
+first-use enrollment after out-of-band fingerprint verification.

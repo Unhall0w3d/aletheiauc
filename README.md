@@ -74,8 +74,9 @@ Current capabilities:
 - Per-node UC Certificate Management REST snapshots using OS read credentials
 - PEM/X.509 identity and trust parsing with SHA-256 deduplication, validity, key,
   signer, AKI/SKI, and best-available chain metadata
-- Active 60-day expiry policy for every returned identity and trust certificate,
-  including `phone-sast-trust` and `phone-vpn-trust` when those optional stores exist
+- Separate service-certificate and trust-store expiry policy, including
+  `phone-sast-trust` and `phone-vpn-trust` when those optional stores exist;
+  stale trust entries are not presented as proof of a service outage
 - Automatic encrypted-profile upgrade when legacy profiles lack OS/SSH credentials
 - Explicit encrypted marker prevents API credentials from being mistaken for Platform/CLI credentials
 - AXL schema retry when CUCM reports that the requested AXL version is unsupported
@@ -96,8 +97,10 @@ Current capabilities:
 The current production-oriented API implementation is AXL plus the bounded
 diagnostic capture path. RISPort70, Control Center, and PerfMon facts are
 normalized only when `--diagnostic-capture` is enabled; they are not yet
-independent baseline collectors with full policy/threshold coverage. CLI
-platform checks remain unimplemented.
+independent baseline collectors with full policy/threshold coverage. Bounded
+CUCM and CUC diagnostic CLI platform collection is available when diagnostic
+capture is enabled; output variants and additional policy thresholds continue to
+be validated against fresh customer-approved evidence.
 
 Current CUCM 15 validation status: AXL inventory and Device Defaults SQL,
 RISPort registration/firmware, Control Center services, PerfMon snapshots,
@@ -475,6 +478,12 @@ During CUCM diagnostic capture, the technology plugin also performs bounded
 per-node UCOS CLI collection after AXL node discovery. It captures NTP, DRS,
 database replication, status, version, core-file, and service evidence for
 offline review and conservative priority findings.
+
+During CUC diagnostic capture, AletheiaUC first uses `show network cluster` on
+the publisher, then applies its bounded, read-only platform catalog to each
+discovered member. Newly discovered SSH hosts remain rejected by default; use
+the explicit first-use enrollment choice only after verifying their fingerprints
+out of band.
 
 Multi-technology migration has started with an assessment-profile model. An
 assessment profile groups named targets such as `call-control` and `voicemail`;
