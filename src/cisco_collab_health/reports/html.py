@@ -119,7 +119,6 @@ class HtmlReportBuilder:
 
     def __init__(self, *, customer_safe: bool = False, template: str = "aletheiauc") -> None:
         self.customer_safe = customer_safe
-        self._identifier_aliases: dict[tuple[str, str], str] = {}
         try:
             self.template = REPORT_TEMPLATES[template]
             self.theme = REPORT_THEMES[template]
@@ -130,7 +129,6 @@ class HtmlReportBuilder:
             ) from exc
 
     def build(self, report: AssessmentReport) -> str:
-        self._identifier_aliases.clear()
         severity_counts = Counter(finding.severity for finding in report.findings)
         collector_note_count = sum(len(result.notes) for result in report.collector_results)
         collector_issue_count = sum(
@@ -1454,8 +1452,6 @@ class HtmlReportBuilder:
     def _device_rows(self, report: AssessmentReport) -> str:
         if not report.facts.devices:
             return '<tr><td colspan="8">No devices inventoried.</td></tr>'
-        if self.customer_safe:
-            return '<tr><td colspan="8">Detailed device identifiers and configuration omitted from customer-safe report.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -1565,8 +1561,6 @@ class HtmlReportBuilder:
     def _registration_rows(self, report: AssessmentReport) -> str:
         if not report.facts.registrations:
             return '<tr><td colspan="11">No device registration facts collected.</td></tr>'
-        if self.customer_safe:
-            return '<tr><td colspan="11">Detailed registration identifiers omitted from customer-safe report.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -1838,20 +1832,16 @@ class HtmlReportBuilder:
         if not isinstance(targets, list) or not targets:
             return ""
         rows = []
-        technology_counts: Counter[str] = Counter()
         for target in targets:
             if not isinstance(target, dict):
                 continue
             technology = display_text(target.get("technology")).upper()
-            technology_counts[technology] += 1
             address = self._target_address(report, target)
             address = self._identifier(address, "Address")
-            profile = (
-                "Omitted" if self.customer_safe else display_text(target.get("connection_profile"))
-            )
+            profile = display_text(target.get("connection_profile"))
             rows.append(
                 "<tr>"
-                f"<td>{escape(f'{technology} Target {technology_counts[technology]}' if self.customer_safe else display_text(target.get('target_id')))}</td>"
+                f"<td>{escape(display_text(target.get('target_id')))}</td>"
                 f"<td>{escape(technology)}</td>"
                 f"<td>{escape(address)}</td><td>{escape(profile)}</td>"
                 "</tr>"
@@ -1921,17 +1911,11 @@ class HtmlReportBuilder:
             f"<tr><td>{escape(object_type)}</td><td>{count}</td></tr>"
             for object_type, count in sorted(counts.items())
         )
-        if self.customer_safe:
-            detail_rows = (
-                '<tr><td colspan="3">Configuration names and details omitted from '
-                "customer-safe report.</td></tr>"
-            )
-        else:
-            detail_rows = "".join(
-                f"<tr><td>{escape(item.object_type.removeprefix('Cuc'))}</td>"
-                f"<td>{escape(item.name)}</td><td>{escape(display_details(item.details))}</td></tr>"
-                for item in sorted(configuration, key=lambda value: (value.object_type, value.name))
-            )
+        detail_rows = "".join(
+            f"<tr><td>{escape(item.object_type.removeprefix('Cuc'))}</td>"
+            f"<td>{escape(item.name)}</td><td>{escape(display_details(item.details))}</td></tr>"
+            for item in sorted(configuration, key=lambda value: (value.object_type, value.name))
+        )
         return f"""
     <section class="technology-section cuc-section">
       <h2>Unity Connection Configuration</h2>
@@ -1998,10 +1982,6 @@ class HtmlReportBuilder:
         )
 
     def _route_pattern_relationship_rows(self, report: AssessmentReport) -> str:
-        if self.customer_safe:
-            return (
-                '<tr><td colspan="5">Dial-plan names omitted from customer-safe report.</td></tr>'
-            )
         patterns = [
             item
             for item in report.facts.configuration_objects
@@ -2020,10 +2000,6 @@ class HtmlReportBuilder:
         )
 
     def _route_list_relationship_rows(self, report: AssessmentReport) -> str:
-        if self.customer_safe:
-            return (
-                '<tr><td colspan="2">Route-list names omitted from customer-safe report.</td></tr>'
-            )
         route_lists = [
             item for item in report.facts.configuration_objects if item.object_type == "RouteList"
         ]
@@ -2036,8 +2012,6 @@ class HtmlReportBuilder:
         )
 
     def _css_partition_coverage_rows(self, report: AssessmentReport) -> str:
-        if self.customer_safe:
-            return '<tr><td colspan="3">CSS and partition names omitted from customer-safe report.</td></tr>'
         css_items = [
             item for item in report.facts.configuration_objects if item.object_type == "Css"
         ]
@@ -2067,12 +2041,6 @@ class HtmlReportBuilder:
         ]
         if not selected:
             return '<tr><td colspan="3">No matching configuration records collected.</td></tr>'
-        if self.customer_safe:
-            counts = Counter(item.object_type for item in selected)
-            return "".join(
-                f"<tr><td>{escape(object_type)}</td><td>Omitted</td><td>{count} record(s)</td></tr>"
-                for object_type, count in sorted(counts.items())
-            )
         return "".join(
             f"<tr><td>{escape(item.object_type)}</td><td>{escape(item.name)}</td>"
             f"<td>{escape(display_details(item.details))}</td></tr>"
@@ -2097,8 +2065,6 @@ class HtmlReportBuilder:
     def _configuration_rows(self, report: AssessmentReport) -> str:
         if not report.facts.configuration_objects:
             return '<tr><td colspan="4">No normalized configuration objects collected.</td></tr>'
-        if self.customer_safe:
-            return '<tr><td colspan="4">Configuration names and details omitted from customer-safe report.</td></tr>'
         return "\n".join(
             "<tr>"
             f"<td>{escape(item.object_type)}</td>"
@@ -2122,7 +2088,7 @@ class HtmlReportBuilder:
                 f"<td>{escape(self._identifier(check.node, 'Node'))}</td>"
                 f"<td>{escape(check.check_name)}</td>"
                 f"<td>{escape(check.status)}</td>"
-                f"<td>{escape('Detailed output omitted' if self.customer_safe else display_details(check.details))}</td>"
+                f"<td>{escape(display_details(check.details))}</td>"
                 f"<td>{escape(display_source(check.source))}</td>"
                 "</tr>"
             )
@@ -2151,14 +2117,14 @@ class HtmlReportBuilder:
         return "\n".join(
             "<tr>"
             f"<td>{escape(', '.join(self._identifier(node, 'Node') for node in sorted({entry.node for entry in occurrences})))}</td>"
-            f"<td>{escape('Certificate' if self.customer_safe else display_text(item.name))}</td>"
+            f"<td>{escape(display_text(item.name))}</td>"
             f"<td>{escape(display_text(item.service or item.store))}</td>"
             f"<td>{escape(item.certificate_kind)}</td>"
             f"<td>{escape(display_text(item.valid_until))}</td>"
             f"<td>{escape(display_text(item.days_remaining))}</td>"
             f"<td>{'Self-signed' if item.self_signed else 'CA-signed' if item.self_signed is False else 'Unknown'}</td>"
-            f"<td>{escape('Omitted' if self.customer_safe and item.intermediate else display_text(item.intermediate))}</td>"
-            f"<td>{escape('Omitted' if self.customer_safe and item.root else display_text(item.root))}</td>"
+            f"<td>{escape(display_text(item.intermediate))}</td>"
+            f"<td>{escape(display_text(item.root))}</td>"
             f"<td>{escape(display_text(item.chain_status))}</td>"
             "</tr>"
             for occurrences in grouped.values()
@@ -2191,24 +2157,15 @@ class HtmlReportBuilder:
         rows = []
         for result in report.collector_results:
             for warning in result.warnings:
-                message = (
-                    "Warning detail omitted from customer-safe report."
-                    if self.customer_safe
-                    else warning
-                )
                 rows.append(
                     "<tr>"
                     f"<td>{escape(self._collector_label(result.collector_name))}</td>"
                     "<td>warning</td>"
-                    f"<td>{escape(message)}</td>"
+                    f"<td>{escape(warning)}</td>"
                     "</tr>"
                 )
             for error in result.errors:
-                error_message = (
-                    "Error detail omitted from customer-safe report."
-                    if self.customer_safe
-                    else f"{error.exception_type}: {error.message}"
-                )
+                error_message = f"{error.exception_type}: {error.message}"
                 rows.append(
                     "<tr>"
                     f"<td>{escape(self._collector_label(result.collector_name))}</td>"
@@ -2232,18 +2189,11 @@ class HtmlReportBuilder:
 """
 
     def _collector_notes_section(self, report: AssessmentReport) -> str:
-        if self.customer_safe:
-            return ""
         rows = []
         for result in report.collector_results:
             for note in result.notes:
-                note_text = (
-                    "Operational note detail omitted from customer-safe report."
-                    if self.customer_safe
-                    else note
-                )
                 rows.append(
-                    f"<tr><td>{escape(result.collector_name)}</td><td>{escape(note_text)}</td></tr>"
+                    f"<tr><td>{escape(result.collector_name)}</td><td>{escape(note)}</td></tr>"
                 )
 
         if not rows:
@@ -2266,15 +2216,6 @@ class HtmlReportBuilder:
 """
 
     def _collector_evidence_section(self, report: AssessmentReport) -> str:
-        if self.customer_safe:
-            evidence_count = sum(len(result.evidence) for result in report.collector_results)
-            return f"""
-    <section>
-      <h2>Collection Evidence</h2>
-      <p class="meta">{evidence_count} evidence references were captured. Detailed technical
-      operations and private engineering artifacts are omitted from this customer deliverable.</p>
-    </section>
-"""
         rows = []
         for result in report.collector_results:
             for evidence in result.evidence:
@@ -2400,8 +2341,6 @@ class HtmlReportBuilder:
     def _runtime_only_rows(self, registrations: list[DeviceRegistrationFact]) -> str:
         if not registrations:
             return '<tr><td colspan="6">No runtime-only devices found.</td></tr>'
-        if self.customer_safe:
-            return '<tr><td colspan="6">Runtime-only identifiers omitted from customer-safe report.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -2421,8 +2360,6 @@ class HtmlReportBuilder:
             return (
                 '<tr><td colspan="6">No configured devices absent from the RIS response.</td></tr>'
             )
-        if self.customer_safe:
-            return '<tr><td colspan="6">Inventory-only identifiers omitted from customer-safe report.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -2440,10 +2377,6 @@ class HtmlReportBuilder:
     def _inventory_only_summary_rows(
         self, devices: list[DeviceInventoryFact], attribute: str
     ) -> str:
-        if self.customer_safe and attribute == "device_pool":
-            return (
-                '<tr><td colspan="2">Device-pool names omitted from customer-safe report.</td></tr>'
-            )
         counts = Counter(getattr(device, attribute) or "Unavailable" for device in devices)
         if not counts:
             return '<tr><td colspan="2">No inventory-only devices found.</td></tr>'
@@ -2454,19 +2387,14 @@ class HtmlReportBuilder:
 
     def _finding_section(self, finding: HealthFinding) -> str:
         severity = escape(finding.severity.value)
-        facts = (
-            "<li>Detailed assessment facts omitted from customer-safe report.</li>"
-            if self.customer_safe and finding.facts
-            else "\n".join(f"<li>{escape(fact)}</li>" for fact in finding.facts)
-        )
+        facts = "\n".join(f"<li>{escape(fact)}</li>" for fact in finding.facts)
         recommendation = ""
         if finding.recommendation:
             escaped_recommendation = escape(finding.recommendation)
             recommendation = f"<p><strong>Recommended next step:</strong> {escaped_recommendation}</p>"
         evidence = self._evidence_list(finding)
         finding_metadata = f"Priority: {self._finding_priority_label(finding.severity)}"
-        if not self.customer_safe:
-            finding_metadata += f" | Severity: {severity}"
+        finding_metadata += f" | Severity: {severity}"
 
         return f"""
       <article class="finding rds-finding rds-{severity}">
@@ -2487,8 +2415,6 @@ class HtmlReportBuilder:
 
     def _evidence_list(self, finding: HealthFinding) -> str:
         if not finding.evidence:
-            return ""
-        if self.customer_safe:
             return ""
 
         items = []
@@ -2525,25 +2451,13 @@ class HtmlReportBuilder:
         return "For awareness"
 
     def _identifier(self, value: object | None, kind: str) -> str:
-        text = display_text(value)
-        if not self.customer_safe or text == "—":
-            return text
-        key = (kind, text)
-        alias = self._identifier_aliases.get(key)
-        if alias is None:
-            alias = f"{kind}-{sum(item_kind == kind for item_kind, _ in self._identifier_aliases) + 1:03d}"
-            self._identifier_aliases[key] = alias
-        return alias
+        del kind
+        return display_text(value)
 
     def _collector_label(self, name: str) -> str:
-        """Keep internal target/profile labels out of customer-safe report metadata."""
+        """Render the collector label consistently in both report editions."""
 
-        if not self.customer_safe:
-            return name
-        technology_match = name.rsplit("[", maxsplit=1)
-        if len(technology_match) == 2 and technology_match[1].endswith("]"):
-            return f"{technology_match[1][:-1].upper()} collector"
-        return "Assessment collector"
+        return name
 
 
 def _protocol_bucket(protocol: str | None) -> str:

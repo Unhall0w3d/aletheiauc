@@ -235,7 +235,7 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertNotIn("Beacon Horizon", payload)
         self.assertNotIn("https://", payload)
 
-    def test_customer_safe_report_uses_neutral_scope_and_evidence_labels(self) -> None:
+    def test_customer_deliverable_retains_scope_identifiers_and_evidence_operations(self) -> None:
         report = AssessmentReport(
             facts=AssessmentFacts(
                 nodes=[
@@ -256,16 +256,12 @@ class ReportBuilderTests(unittest.TestCase):
 
         payload = HtmlReportBuilder(customer_safe=True).build(report)
 
-        self.assertIn("CUC Target 1", payload)
-        self.assertIn("CUCM Target 1", payload)
-        self.assertNotIn("cuc-pub", payload)
-        self.assertNotIn("cucm-pub", payload)
-        self.assertRegex(payload, r"Node-[0-9]{3}")
-        self.assertIn("Collection Evidence", payload)
+        self.assertIn("Yorktown-Voice", payload)
+        self.assertIn("Yorktown-Call-Control", payload)
+        self.assertIn("cuc-pub", payload)
+        self.assertIn("cucm-pub", payload)
+        self.assertIn("Collector Evidence", payload)
         self.assertIn("CUCM configuration discovery; Unity Connection cluster status", payload)
-        self.assertNotIn("Yorktown-Voice", payload)
-        self.assertNotIn("Yorktown-Call-Control", payload)
-        self.assertNotIn("Collector Evidence", payload)
 
     def test_target_scope_uses_discovered_publisher_when_address_is_unavailable(self) -> None:
         report = AssessmentReport(
@@ -292,10 +288,9 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("Server address", engineering)
         self.assertIn("192.0.2.10", engineering)
         self.assertIn("Server address", customer)
-        self.assertNotIn("192.0.2.10", customer)
-        self.assertRegex(customer, r"Address-[0-9]{3}")
+        self.assertIn("192.0.2.10", customer)
 
-    def test_priority_findings_use_plain_language_and_hide_customer_evidence_ledger(self) -> None:
+    def test_priority_findings_retain_customer_facts_and_evidence_without_artifact_paths(self) -> None:
         finding = HealthFinding(
             rule_id="certificates.expired",
             title="One certificate is expired",
@@ -333,11 +328,10 @@ class ReportBuilderTests(unittest.TestCase):
             self.assertIn("Recommended next step:", payload)
             self.assertIn("Assessment observations (1)", payload)
         self.assertIn("tomcat certificate on cucm-pub: expired 4 days ago", engineering)
-        self.assertNotIn("tomcat certificate on cucm-pub: expired 4 days ago", customer)
-        self.assertIn("Detailed assessment facts omitted from customer-safe report.", customer)
+        self.assertIn("tomcat certificate on cucm-pub: expired 4 days ago", customer)
         self.assertIn("Technical collection detail", engineering)
-        self.assertNotIn("Collection evidence was captured for this finding.", customer)
-        self.assertNotIn("Technical collection detail", customer)
+        self.assertIn("Technical collection detail", customer)
+        self.assertIn("Certificate Management REST", customer)
 
     def test_aletheiauc_header_shows_diagnostic_state(self) -> None:
         report = AssessmentReport(
@@ -1004,7 +998,7 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("CPU percentage unavailable", payload)
         self.assertIn("Unavailable (zero-only snapshot)", payload)
 
-    def test_customer_safe_html_omits_identifiers_and_artifact_paths(self) -> None:
+    def test_customer_deliverable_retains_identifiers_but_omits_artifact_paths(self) -> None:
         report = AssessmentReport(
             facts=AssessmentFacts(
                 devices=[
@@ -1047,14 +1041,11 @@ class ReportBuilderTests(unittest.TestCase):
 
         payload = HtmlReportBuilder(customer_safe=True).build(report)
 
-        self.assertNotIn("SEP001122334455", payload)
-        self.assertNotIn("PrivateCustomer", payload)
-        self.assertNotIn("private-publisher.example", payload)
+        self.assertIn("SEP001122334455", payload)
+        self.assertIn("PrivateCustomer", payload)
+        self.assertIn("private-publisher.example", payload)
         self.assertNotIn("private/artifact/response.txt", payload)
         self.assertIn("Customer-safe HTML</th><td>Enabled", payload)
-        self.assertIn("Detailed device identifiers and configuration omitted", payload)
-        self.assertRegex(payload, r"Profile-[0-9]{3}")
-        self.assertRegex(payload, r"Node-[0-9]{3}")
 
     def test_html_report_contains_collector_notes_and_evidence(self) -> None:
         report = AssessmentReport(

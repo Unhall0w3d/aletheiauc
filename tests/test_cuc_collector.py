@@ -110,7 +110,7 @@ class CucCollectorTests(unittest.TestCase):
             )
         )
 
-    def test_sanitized_cuc_configuration_is_exposed_and_customer_safe_details_are_hidden(self) -> None:
+    def test_sanitized_cuc_configuration_is_exposed_in_both_report_editions(self) -> None:
         result = CucCollector(
             http_client=ConfigurationHttpClient(), diagnostic_capture=True
         ).collect(CollectionContext(product="cuc", publisher_ip="192.0.2.20"))
@@ -122,5 +122,5 @@ class CucCollectorTests(unittest.TestCase):
         self.assertIn("Unity Connection Configuration", engineering)
         self.assertIn("example.invalid", engineering)
         self.assertIn("SmtpConfiguration", engineering)
-        self.assertNotIn("example.invalid", customer_safe)
-        self.assertIn("Configuration names and details omitted", customer_safe)
+        self.assertIn("example.invalid", customer_safe)
+        self.assertIn("SmtpConfiguration", customer_safe)

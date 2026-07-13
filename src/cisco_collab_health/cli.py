@@ -54,8 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--customer-safe-report",
         action="store_true",
         help=(
-            "Mask customer identifiers and omit sensitive detail from the HTML report. "
-            "Raw artifacts and JSON remain private diagnostic output."
+            "Build the customer-deliverable HTML with operational identifiers and "
+            "configuration, but without private artifact paths. Raw artifacts and JSON "
+            "remain private diagnostic output."
         ),
     )
     parser.add_argument(

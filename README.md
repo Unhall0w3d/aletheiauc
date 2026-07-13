@@ -102,7 +102,8 @@ Current capabilities:
 - Styled HTML report builder
 - JSON output for development and automation
 - Raw evidence capture, normalized artifacts, and per-attempt API accounting
-- Collapsible detail tables and an identifier-masked customer-safe HTML mode
+- Collapsible detail tables and a customer-deliverable HTML mode that retains
+  operational identifiers while omitting private artifact paths
 - Responsive horizontal overflow handling for wide report tables
 
 The current production-oriented API implementation is AXL plus the bounded
@@ -412,9 +413,9 @@ certificates during alpha testing. To verify CUCM HTTPS certificates:
 
 Use `--insecure` to explicitly keep certificate verification disabled.
 
-To generate an HTML report intended for controlled sharing, mask node/profile
-identifiers and omit detailed device, registration, configuration, and artifact
-paths:
+To generate an HTML report intended for controlled sharing with the assessed
+customer, retain operational identifiers and configuration while omitting private
+artifact paths:
 
 ```bash
 ./aletheiauc.py --customer-safe-report
@@ -425,9 +426,10 @@ paths:
 HTML reports use the `aletheiauc` template by default. It draws on the project
 palette—midnight, violet, blue, cyan, and horizon gold—to create a beacon-like
 engineering brief without embedding or reproducing the repository artwork. The
-same visual system is used by both the full engineering report and the
-identifier-masked customer deliverable; customer-safe controls still determine
-which data appears.
+same visual system is used by both the full engineering report and the customer
+deliverable. The customer edition retains target names, hostnames, IP addresses,
+devices, dial-plan values, and configuration so customer engineers can interpret
+the assessment.
 
 The template is selected with `--html-template aletheiauc`. Template selection
 is intentionally explicit in the report builder and CLI so customer or partner
@@ -436,7 +438,7 @@ templates can be added without changing collection or report facts.
 `comsource` is an optional customer-facing template. It uses the supplied
 ComSource logo and purple/cyan print-friendly visual system, with no AletheiaUC
 name, marks, capability row, or attribution in its rendered output. It retains
-the same report facts and customer-safe masking behavior:
+the same report facts and customer-deliverable data policy:
 
 ```bash
 ./aletheiauc.py --html-template comsource --customer-safe-report
@@ -446,8 +448,8 @@ Both templates embed their assets in the generated HTML, so reports have no
 remote font, script, image, analytics, or CDN dependency.
 
 When `--export-review-zip` is used, the troubleshooting bundle includes both
-`report.html` and `customer_safe_report.html`. The latter always applies
-customer-safe masking with the selected template and is included for review;
+`report.html` and `customer_safe_report.html`. The latter applies the
+customer-deliverable policy with the selected template and is included for review;
 the ZIP itself remains private diagnostic material because it can also contain
 raw evidence and engineering artifacts.
 

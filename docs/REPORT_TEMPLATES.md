@@ -1,7 +1,7 @@
 # HTML Report Templates
 
 Report templates change presentation only. Collection, evidence, findings, and
-customer-safe masking are shared by every template.
+the customer-deliverable data policy are shared by every template.
 
 ## AletheiaUC
 
@@ -31,24 +31,23 @@ preview.
 
 With `--export-review-zip`, the private troubleshooting bundle includes the
 selected report as `report.html` and a separately rendered,
-always-masked `customer_safe_report.html`. This permits side-by-side review of
-the customer deliverable while retaining the engineering artifacts in the same
-private bundle.
+customer-deliverable `customer_safe_report.html`. This permits side-by-side
+review of the customer deliverable while retaining the engineering artifacts in
+the same private bundle.
 
-Customer-safe reports use the same assessment facts as engineering reports.
-They do not use synthetic data. They pseudonymize profile, target, node, device,
-and address identifiers; omit private artifact paths, detailed device and
-registration tables, platform-command details, finding fact strings, and
-technical evidence inventories; and retain de-identified findings and summarized
-collection coverage needed for review. The pseudonyms are deterministic within
-a report so repeated references remain understandable.
+Customer-safe reports use the same assessment facts as engineering reports and
+do not use synthetic data. They retain profile and target names, hostnames, IP
+addresses, device identifiers, dial-plan values, CUC/CUCM configuration,
+normalized platform details, finding facts, and technical evidence operations.
+This is intentional: the customer audience includes engineers who need concrete
+identifiers to understand and act on the assessment. Private artifact paths and
+raw evidence content remain omitted.
 
 Engineering reports expose bounded CUC inventory and sanitized configuration in
 separate sections. CUCM configuration reporting includes dedicated expandable
 tables for hunt/directory-number topology, trunk/directory/device security, and
-media-resource membership. Customer-safe reports retain counts for these areas
-while omitting configuration names, dial-plan values, LDAP paths, destinations,
-and detailed settings.
+media-resource membership. Customer-safe reports expose the same operational
+configuration names, dial-plan values, LDAP paths, destinations, and settings.
 
 The standalone AletheiaUC report embeds only the artwork it actively renders;
 the hero image is not duplicated as a section watermark. This keeps the report
@@ -63,7 +62,7 @@ for the hero, metadata chips, sections, metrics, findings, tables, and footer.
 Themes provide only their tokens and named asset slots. The AletheiaUC template
 uses the canonical repository logo; the ComSource template uses the supplied
 official SVG unchanged. Theme presentation must not change facts, health logic,
-or customer-safe masking.
+or customer-deliverable data policy.
 
 Every troubleshooting/review ZIP now includes all presentation comparisons,
 rendered from the same assessment facts:
