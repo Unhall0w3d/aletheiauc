@@ -224,7 +224,7 @@ class ArtifactStoreTests(unittest.TestCase):
                 write_log_bundle(
                     log_store,
                     report=report,
-                    summary_text="Executive Summary\n",
+                    summary_text="Executive Summary\nHTML report: reports/source.html\n",
                     artifact_store=artifact_store,
                     html_report_path=html_report,
                     customer_safe_html_report_path=customer_safe_html_report,
@@ -256,6 +256,10 @@ class ArtifactStoreTests(unittest.TestCase):
             self.assertIn("response.txt", artifact_index.read_text(encoding="utf-8"))
             self.assertEqual(artifact_copy.read_text(encoding="utf-8"), "<xml />")
             self.assertTrue(report_copy.exists())
+            self.assertEqual(
+                summary.read_text(encoding="utf-8"),
+                "Executive Summary\nHTML report: report.html\n",
+            )
             self.assertEqual(
                 customer_safe_report_copy.read_text(encoding="utf-8"), "<html>safe</html>"
             )
