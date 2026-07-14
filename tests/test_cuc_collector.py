@@ -232,7 +232,7 @@ class CucCollectorTests(unittest.TestCase):
             )
         )
 
-    def test_sanitized_cuc_configuration_is_exposed_in_both_report_editions(self) -> None:
+    def test_sanitized_cuc_configuration_is_engineering_only(self) -> None:
         result = CucCollector(
             http_client=ConfigurationHttpClient(), diagnostic_capture=True
         ).collect(CollectionContext(product="cuc", publisher_ip="192.0.2.20"))
@@ -244,8 +244,8 @@ class CucCollectorTests(unittest.TestCase):
         self.assertIn("Unity Connection Configuration", engineering)
         self.assertIn("example.invalid", engineering)
         self.assertIn("SmtpConfiguration", engineering)
-        self.assertIn("example.invalid", customer_safe)
-        self.assertIn("SmtpConfiguration", customer_safe)
+        self.assertNotIn("Unity Connection Configuration", customer_safe)
+        self.assertNotIn("example.invalid", customer_safe)
 
     def test_repeated_cuc_schedules_are_aggregated_in_report_details(self) -> None:
         schedule = ConfigurationObjectFact(

@@ -30,6 +30,7 @@ from cisco_collab_health.reports.formatting import (
 )
 from cisco_collab_health.reports.reconciliation import (
     build_inventory_runtime_reconciliation,
+    runtime_resource_category,
 )
 
 
@@ -295,6 +296,10 @@ class HtmlReportBuilder:
         coverage_section = self._coverage_section(report)
         registration_rows = self._registration_rows(report)
         registration_summary_rows = self._registration_summary_rows(report)
+        endpoint_runtime_coverage_section = self._endpoint_runtime_coverage_section(report)
+        call_manager_runtime_resources_section = self._call_manager_runtime_resources_section(
+            report
+        )
         firmware_summary_rows = self._firmware_summary_rows(report)
         firmware_failure_rows = self._firmware_failure_rows(report)
         firmware_failure_detail_rows = self._firmware_failure_detail_rows(report)
@@ -393,17 +398,28 @@ class HtmlReportBuilder:
             "infrastructure",
         )
         analysis_chapter = self._chapter_header(
-            "05 / ANALYSIS",
+            "04 / ANALYSIS" if self.customer_safe else "05 / ANALYSIS",
             "Discovery and Analysis",
             "Collection depth across topology, services, firmware, and configuration",
             "analysis",
         )
         evidence_chapter = self._chapter_header(
-            "06 / EVIDENCE",
+            "05 / EVIDENCE" if self.customer_safe else "06 / EVIDENCE",
             "Appendices and Engineering Evidence",
             "Collector detail, reconciliation, provenance, and inventories",
             "evidence",
         )
+        infrastructure_content = ""
+        analysis_cuc_platform_section = cuc_platform_section
+        if not self.customer_safe:
+            infrastructure_content = (
+                infrastructure_chapter
+                + cuc_inventory_section
+                + cuc_configuration_section
+                + cuc_platform_section
+                + cuc_informix_section
+            )
+            analysis_cuc_platform_section = ""
         body_class = "default-dark" if self.template.key == "aletheiauc" else self.template.key
 
         return f"""<!doctype html>
@@ -763,13 +779,10 @@ class HtmlReportBuilder:
     {scope_chapter}
     {methodology_scope_section}
     {target_scope_section}
-    {infrastructure_chapter}
-    {cuc_inventory_section}
-    {cuc_configuration_section}
-    {cuc_platform_section}
-    {cuc_informix_section}
+    {infrastructure_content}
     {analysis_chapter}
     {coverage_section}
+    {analysis_cuc_platform_section}
     {cluster_section}
     <section>
       <h2>Discovered Nodes</h2>
@@ -811,6 +824,8 @@ class HtmlReportBuilder:
         </tbody>
       </table>
     </section>
+    {endpoint_runtime_coverage_section}
+    {call_manager_runtime_resources_section}
     <section>
       <h2>Device Load Summary</h2>
       {_source_caption("Device Load Summary", report)}
@@ -2156,7 +2171,12 @@ class HtmlReportBuilder:
         )
 
     def _registration_summary_rows(self, report: AssessmentReport) -> str:
-        if not report.facts.registrations:
+        registrations = [
+            registration
+            for registration in report.facts.registrations
+            if runtime_resource_category(registration) is None
+        ]
+        if not registrations:
             return '<tr><td colspan="5">No device registration facts collected.</td></tr>'
 
         counts: dict[str, Counter[str]] = {
@@ -2164,7 +2184,7 @@ class HtmlReportBuilder:
             "Gateways/endpoints": Counter(),
             "SIP trunks": Counter(),
         }
-        for registration in report.facts.registrations:
+        for registration in registrations:
             category = _registration_category(
                 name=registration.name,
                 model=registration.model,
@@ -2191,6 +2211,149 @@ class HtmlReportBuilder:
                 "</tr>"
             )
         return "\n".join(rows)
+
+    def _endpoint_runtime_coverage_section(self, report: AssessmentReport) -> str:
+        """Report configured endpoints that have no current/recent RIS observation."""
+
+        if not report.facts.devices:
+            return ""
+        reconciliation = build_inventory_runtime_reconciliation(
+            report.facts.devices, report.facts.registrations
+        )
+        without_runtime = reconciliation.registration_capable_or_unclassified
+        known_templates = reconciliation.known_non_runtime
+        configured_endpoints = len(report.facts.devices) - len(known_templates)
+        observed_endpoints = configured_endpoints - len(without_runtime)
+        model_rows = self._inventory_only_summary_rows(without_runtime, "model")
+        pool_rows = self._inventory_only_summary_rows(without_runtime, "device_pool")
+        location_rows = self._inventory_only_summary_rows(without_runtime, "location")
+        detail_rows = self._inventory_only_rows(without_runtime)
+        location_context = ""
+        if any(
+            (device.location or "").strip().casefold() == "hub_none" for device in without_runtime
+        ):
+            location_context = (
+                '<p class="meta"><strong>Location context:</strong> <code>Hub_None</code> is '
+                "the CUCM Location assigned to these devices. Reconciliation matches device "
+                "names, so that Location value did not cause the missing runtime observations.</p>"
+            )
+
+        return f"""
+    <section>
+      <h2>Configured Endpoint Runtime Coverage</h2>
+      <p class="meta">Name-based comparison of AXL configured endpoint inventory with the
+      current/recent RIS response. Absence from RIS means no runtime observation was returned;
+      it does not by itself prove that an endpoint is administratively unregistered or unhealthy.</p>
+      {location_context}
+      <table><tbody>
+        <tr><th>Configured endpoints</th><td>{configured_endpoints}</td></tr>
+        <tr><th>Endpoints observed in RIS</th><td>{observed_endpoints}</td></tr>
+        <tr><th>Configured endpoints without RIS observation</th><td>{len(without_runtime)}</td></tr>
+        <tr><th>Configuration templates excluded</th><td>{len(known_templates)}</td></tr>
+      </tbody></table>
+      <details class="report-data"><summary>Show configured endpoints without a runtime observation</summary>
+        <h3>By Model</h3>
+        <div class="table-scroll"><table><thead><tr><th>Model</th><th>Devices</th></tr></thead>
+        <tbody>{model_rows}</tbody></table></div>
+        <h3>By Device Pool</h3>
+        <div class="table-scroll"><table><thead><tr><th>Device Pool</th><th>Devices</th></tr></thead>
+        <tbody>{pool_rows}</tbody></table></div>
+        <h3>By Location</h3>
+        <div class="table-scroll"><table><thead><tr><th>Location</th><th>Devices</th></tr></thead>
+        <tbody>{location_rows}</tbody></table></div>
+        <h3>Endpoint Detail</h3>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Name</th><th>Model</th><th>Protocol</th><th>Device Pool</th><th>Location</th><th>Source</th></tr></thead>
+          <tbody>{detail_rows}</tbody>
+        </table></div>
+      </details>
+    </section>
+"""
+
+    def _call_manager_runtime_resources_section(self, report: AssessmentReport) -> str:
+        """Render non-endpoint CUCM resources from the supplemental all-class RIS query."""
+
+        resources = [
+            registration
+            for registration in report.facts.registrations
+            if runtime_resource_category(registration) is not None
+        ]
+        if not resources:
+            return ""
+        category_order = {
+            name: index
+            for index, name in enumerate(
+                (
+                    "SIP Trunks",
+                    "H.323 Gateways",
+                    "Gateways",
+                    "Route Lists",
+                    "CTI Route Points",
+                    "Annunciators",
+                    "Conference Bridges",
+                    "Transcoders",
+                    "Media Termination Points",
+                    "Music On Hold",
+                    "IVR Media Resources",
+                    "Other Media Resources",
+                )
+            )
+        }
+        grouped: dict[str, Counter[str]] = {}
+        for registration in resources:
+            category = runtime_resource_category(registration)
+            assert category is not None
+            status = registration.status.strip().casefold()
+            bucket = (
+                "registered"
+                if status == "registered"
+                else ("unregistered" if status == "unregistered" else "other")
+            )
+            grouped.setdefault(category, Counter())[bucket] += 1
+        summary_rows = "".join(
+            "<tr>"
+            f"<td>{escape(category)}</td><td>{counts['registered']}</td>"
+            f"<td>{counts['unregistered']}</td><td>{counts['other']}</td>"
+            f"<td>{sum(counts.values())}</td></tr>"
+            for category, counts in sorted(
+                grouped.items(), key=lambda item: (category_order.get(item[0], 99), item[0])
+            )
+        )
+        detail_rows = "".join(
+            "<tr>"
+            f"<td>{escape(runtime_resource_category(registration) or 'Other')}</td>"
+            f"<td>{escape(self._identifier(registration.name, 'Resource'))}</td>"
+            f"<td>{escape(display_text(registration.status))}</td>"
+            f"<td>{escape(self._identifier(registration.registered_node, 'Node'))}</td>"
+            f"<td>{escape(display_text(registration.ip_address))}</td>"
+            f"<td>{escape(display_text(registration.runtime_model_code or registration.model))}</td>"
+            f"<td>{escape(display_text(registration.device_class))}</td>"
+            f"<td>{escape(display_text(registration.protocol))}</td>"
+            "</tr>"
+            for registration in sorted(
+                resources,
+                key=lambda item: (
+                    category_order.get(runtime_resource_category(item) or "", 99),
+                    self._node_reference_sort_key(report, item.registered_node),
+                    _natural_sort_key(item.name),
+                ),
+            )
+        )
+        return f"""
+    <section>
+      <h2>Call Manager Runtime Resources</h2>
+      <p class="meta">Source: supplemental RIS all-device-class runtime discovery. Trunks,
+      gateways, route lists, CTI route points, and media resources are classified using the
+      returned CUCM device class and model code rather than treated as unmatched phones.</p>
+      <table><thead><tr><th>Resource Type</th><th>Registered</th><th>Unregistered</th><th>Other / Unknown</th><th>Total</th></tr></thead>
+      <tbody>{summary_rows}</tbody></table>
+      <details class="report-data"><summary>Show Call Manager runtime resource details</summary>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Resource Type</th><th>Name</th><th>Status</th><th>Node</th><th>Address</th><th>Model Code</th><th>Device Class</th><th>Protocol</th></tr></thead>
+        <tbody>{detail_rows}</tbody>
+      </table></div></details>
+    </section>
+"""
 
     def _firmware_summary_rows(self, report: AssessmentReport) -> str:
         loads = Counter(
@@ -2681,9 +2844,14 @@ class HtmlReportBuilder:
         )
 
     def _configuration_summary_rows(self, report: AssessmentReport) -> str:
-        if not report.facts.configuration_objects:
+        configuration = [
+            item
+            for item in report.facts.configuration_objects
+            if not _is_cuc_configuration_object(item)
+        ]
+        if not configuration:
             return '<tr><td colspan="2">No normalized configuration objects collected.</td></tr>'
-        counts = Counter(item.object_type for item in report.facts.configuration_objects)
+        counts = Counter(item.object_type for item in configuration)
         return "\n".join(
             f"<tr><td>{escape(object_type)}</td><td>{count}</td></tr>"
             for object_type, count in sorted(counts.items())
@@ -2772,7 +2940,12 @@ class HtmlReportBuilder:
         )
 
     def _configuration_rows(self, report: AssessmentReport) -> str:
-        if not report.facts.configuration_objects:
+        configuration = [
+            item
+            for item in report.facts.configuration_objects
+            if not _is_cuc_configuration_object(item)
+        ]
+        if not configuration:
             return '<tr><td colspan="4">No normalized configuration objects collected.</td></tr>'
         return "\n".join(
             "<tr>"
@@ -2782,7 +2955,7 @@ class HtmlReportBuilder:
             f"<td>{escape(display_source(item.source))}</td>"
             "</tr>"
             for item in sorted(
-                report.facts.configuration_objects,
+                configuration,
                 key=lambda fact: (fact.object_type, fact.name),
             )
         )
@@ -3024,60 +3197,39 @@ class HtmlReportBuilder:
                 ("Runtime registration records", reconciliation.runtime_count),
                 ("Matched devices", len(reconciliation.matched_names)),
                 (
-                    "Inventory-only registration-capable/unclassified",
+                    "Configured endpoints without RIS observation (reported in analysis)",
                     len(reconciliation.registration_capable_or_unclassified),
                 ),
                 ("Known non-runtime inventory objects", len(reconciliation.known_non_runtime)),
-                ("Runtime-only devices", len(reconciliation.runtime_only)),
+                (
+                    "CUCM runtime resources (reported in analysis)",
+                    len(reconciliation.runtime_only_resources),
+                ),
+                ("Unmatched runtime endpoint records", len(reconciliation.runtime_only_endpoints)),
             )
         )
-        inventory_only_rows = self._inventory_only_rows(
-            reconciliation.registration_capable_or_unclassified
-        )
-        inventory_model_rows = self._inventory_only_summary_rows(
-            reconciliation.registration_capable_or_unclassified, "model"
-        )
-        inventory_pool_rows = self._inventory_only_summary_rows(
-            reconciliation.registration_capable_or_unclassified, "device_pool"
-        )
         non_runtime_rows = self._inventory_only_rows(reconciliation.known_non_runtime)
-        runtime_only_rows = self._runtime_only_rows(report, reconciliation.runtime_only)
+        runtime_only_rows = self._runtime_only_rows(report, reconciliation.runtime_only_endpoints)
 
         return f"""
     <section>
       <h2>Inventory / Runtime Reconciliation</h2>
       <p class="meta">Informational name-based comparison between configured inventory facts
-      and runtime registration facts. Inventory-only objects are conservatively separated when
-      their model is known not to register. Remaining devices are not automatically unregistered or unhealthy.
-      Differences are not health findings.</p>
+      and runtime registration facts. Endpoint coverage and recognized CUCM runtime resources
+      are reported in the Call Manager analysis above; this appendix retains only unmatched
+      runtime endpoint records and known non-runtime configuration objects. Differences are not
+      health findings.</p>
       <table>
         <tbody>
           {summary_rows}
         </tbody>
       </table>
-      <h3>Runtime-only Devices</h3>
-      <details class="report-data"><summary>Show runtime-only devices</summary>
+      <h3>Unmatched Runtime Endpoint Records</h3>
+      <details class="report-data"><summary>Show unmatched runtime endpoint records</summary>
       <table>
         <thead><tr><th>Name</th><th>Status</th><th>Registered Node</th><th>Model</th><th>Protocol</th><th>Source</th></tr></thead>
         <tbody>
           {runtime_only_rows}
-        </tbody>
-      </table>
-      </details>
-      <h3>Inventory-only Registration-capable or Unclassified Devices</h3>
-      <details class="report-data"><summary>Show inventory-only device summaries and details</summary>
-      <div class="table-scroll"><table>
-        <thead><tr><th>Model</th><th>Devices</th></tr></thead>
-        <tbody>{inventory_model_rows}</tbody>
-      </table></div>
-      <div class="table-scroll"><table>
-        <thead><tr><th>Device Pool</th><th>Devices</th></tr></thead>
-        <tbody>{inventory_pool_rows}</tbody>
-      </table></div>
-      <table>
-        <thead><tr><th>Name</th><th>Model</th><th>Protocol</th><th>Device Pool</th><th>Location</th><th>Source</th></tr></thead>
-        <tbody>
-          {inventory_only_rows}
         </tbody>
       </table>
       </details>
@@ -3179,7 +3331,7 @@ class HtmlReportBuilder:
 """
 
     def _evidence_list(self, finding: HealthFinding) -> str:
-        if not finding.evidence:
+        if self.customer_safe or not finding.evidence:
             return ""
 
         items = []
@@ -3254,6 +3406,10 @@ class HtmlReportBuilder:
             technology_rank = min(node_keys)[0] if node_keys else _technology_sort_key("")
             return (technology_rank, _natural_sort_key(name))
         return (_technology_sort_key(technology), _natural_sort_key(name))
+
+
+def _is_cuc_configuration_object(item: ConfigurationObjectFact) -> bool:
+    return item.source.strip().upper().startswith("CUC.") or item.object_type.startswith("Cuc")
 
 
 def _protocol_bucket(protocol: str | None) -> str:

@@ -21,6 +21,7 @@ from cisco_collab_health.models.facts import (
     AssessmentFacts,
     ClusterIdentity,
     CollaborationNode,
+    ConfigurationObjectFact,
     DeviceInventoryFact,
     DeviceLoadDefaultFact,
     DeviceRegistrationFact,
@@ -45,6 +46,7 @@ from cisco_collab_health.reports.html import (
 from cisco_collab_health.reports.json import JsonReportBuilder
 from cisco_collab_health.reports.reconciliation import (
     build_inventory_runtime_reconciliation,
+    runtime_resource_category,
 )
 from cisco_collab_health.reports.summary import ExecutiveSummaryBuilder
 from cisco_collab_health.rules.basic import ClusterIdentityRule, NodeReachabilityRule
@@ -380,8 +382,7 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("tomcat certificate on cucm-pub: expired 4 days ago", engineering)
         self.assertIn("tomcat certificate on cucm-pub: expired 4 days ago", customer)
         self.assertIn("Technical collection detail", engineering)
-        self.assertIn("Technical collection detail", customer)
-        self.assertIn("Certificate Management REST", customer)
+        self.assertNotIn("Technical collection detail", customer)
 
     def test_aletheiauc_header_shows_diagnostic_state(self) -> None:
         report = AssessmentReport(
@@ -492,7 +493,7 @@ class ReportBuilderTests(unittest.TestCase):
                     "Show certificates requiring attention",
                     "Show platform checks",
                     "Show collector evidence",
-                    "Show inventory-only device summaries and details",
+                    "Show configured endpoints without a runtime observation",
                 ):
                     self.assertIn(
                         f'<details class="report-data"><summary>{summary}</summary>', html
@@ -745,11 +746,19 @@ class ReportBuilderTests(unittest.TestCase):
             payload,
         )
         self.assertIn(
-            "<tr><td>Gateways/endpoints</td><td>1</td><td>0</td><td>0</td><td>1</td></tr>",
+            "<tr><td>Gateways/endpoints</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>",
             payload,
         )
         self.assertIn(
-            "<tr><td>SIP trunks</td><td>0</td><td>1</td><td>0</td><td>1</td></tr>",
+            "<tr><td>SIP trunks</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>",
+            payload,
+        )
+        self.assertIn(
+            "<tr><td>Gateways</td><td>1</td><td>0</td><td>0</td><td>1</td></tr>",
+            payload,
+        )
+        self.assertIn(
+            "<tr><td>SIP Trunks</td><td>0</td><td>1</td><td>0</td><td>1</td></tr>",
             payload,
         )
 
@@ -962,16 +971,185 @@ class ReportBuilderTests(unittest.TestCase):
             [registration.name for registration in reconciliation.runtime_only],
             ["HQ-VG01"],
         )
+        self.assertEqual(
+            [registration.name for registration in reconciliation.runtime_only_resources],
+            ["HQ-VG01"],
+        )
+        self.assertEqual(reconciliation.runtime_only_endpoints, [])
+
+    def test_runtime_resource_categories_cover_observed_cucm_classes_and_models(self) -> None:
+        cases = (
+            ("SIPTrunk", "131", "SIP Trunks"),
+            ("HuntList", "90", "Route Lists"),
+            ("H323", "62", "H.323 Gateways"),
+            ("Cti", "73", "CTI Route Points"),
+            ("MediaResources", "126", "Annunciators"),
+            ("MediaResources", "50", "Conference Bridges"),
+            ("MediaResources", "112", "Transcoders"),
+            ("MediaResources", "110", "Media Termination Points"),
+            ("MediaResources", "70", "Music On Hold"),
+            ("MediaResources", "36219", "IVR Media Resources"),
+        )
+        for device_class, model_code, expected in cases:
+            with self.subTest(device_class=device_class, model_code=model_code):
+                registration = DeviceRegistrationFact(
+                    name=f"RESOURCE-{model_code}",
+                    status="Registered",
+                    registered_node="pub",
+                    ip_address=None,
+                    model=model_code,
+                    protocol="Any",
+                    source="RISPort70.selectCmDevice",
+                    runtime_model_code=model_code,
+                    device_class=device_class,
+                )
+                self.assertEqual(runtime_resource_category(registration), expected)
 
     def test_html_reconciliation_section_is_informational_only(self) -> None:
         payload = HtmlReportBuilder().build(self.report)
 
-        self.assertIn("Runtime-only Devices", payload)
+        self.assertIn("Call Manager Runtime Resources", payload)
+        self.assertIn("Unmatched Runtime Endpoint Records", payload)
         self.assertIn("HQ-VG01", payload)
         self.assertIn("ITSP-SIP-TRUNK", payload)
-        self.assertIn("Differences are not health findings.", payload)
-        self.assertIn("not automatically unregistered or unhealthy", payload)
+        self.assertIn("health findings.", payload)
         self.assertNotIn("inventory.runtime_reconciliation", payload)
+
+    def test_customer_report_omits_infrastructure_chapter_and_relocates_cuc_health(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                configuration_objects=[
+                    ConfigurationObjectFact(
+                        object_type="CucMailboxInventory",
+                        name="Mailboxes",
+                        details={"total": "10"},
+                        source="CUC.CUPI.GET",
+                    ),
+                    ConfigurationObjectFact(
+                        object_type="CucPhoneSystem",
+                        name="Phone System",
+                        details={},
+                        source="CUC.CUPI.GET",
+                    ),
+                ],
+                platform_checks=[
+                    PlatformCheckFact("cuc-pub", "show status", "ok", {}, "CUC.UCOS.CLI")
+                ],
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        engineering = HtmlReportBuilder().build(report)
+
+        self.assertIn("Infrastructure and Inventory", engineering)
+        self.assertIn("Unity Connection Inventory", engineering)
+        self.assertIn("Unity Connection Configuration", engineering)
+        for template in available_report_templates():
+            customer = HtmlReportBuilder(customer_safe=True, template=template).build(report)
+            self.assertNotIn("Infrastructure and Inventory", customer)
+            self.assertNotIn("04 / INFRASTRUCTURE", customer)
+            self.assertIn("04 / ANALYSIS", customer)
+            self.assertIn("05 / EVIDENCE", customer)
+            self.assertNotIn("Unity Connection Inventory", customer)
+            self.assertNotIn("Unity Connection Configuration", customer)
+            self.assertIn("Unity Connection Platform Health", customer)
+            self.assertLess(
+                customer.index("Collection Coverage"),
+                customer.index("Unity Connection Platform Health"),
+            )
+            self.assertLess(
+                customer.index("Unity Connection Platform Health"),
+                customer.index("<h2>Cluster</h2>"),
+            )
+
+    def test_cucm_runtime_resources_and_missing_endpoints_are_reported_separately(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                devices=[
+                    DeviceInventoryFact(
+                        name="SEP-MISSING",
+                        description=None,
+                        model="Cisco 8841",
+                        protocol="SIP",
+                        device_pool="School-A",
+                        call_manager_group=None,
+                        location="Hub_None",
+                        region=None,
+                        configured_load=None,
+                        source="AXL.listPhone.summary",
+                    ),
+                    DeviceInventoryFact(
+                        name="Auto-registration Template",
+                        description=None,
+                        model="Universal Device Template",
+                        protocol="SIP",
+                        device_pool="Default",
+                        call_manager_group=None,
+                        location="Hub_None",
+                        region=None,
+                        configured_load=None,
+                        source="AXL.listPhone.summary",
+                    ),
+                ],
+                registrations=[
+                    DeviceRegistrationFact(
+                        "TRUNK-1",
+                        "Registered",
+                        "pub",
+                        None,
+                        "131",
+                        "Any",
+                        "RISPort70.selectCmDevice",
+                        runtime_model_code="131",
+                        device_class="SIPTrunk",
+                    ),
+                    DeviceRegistrationFact(
+                        "ANN-PUB",
+                        "Registered",
+                        "pub",
+                        None,
+                        "126",
+                        "Any",
+                        "RISPort70.selectCmDevice",
+                        runtime_model_code="126",
+                        device_class="MediaResources",
+                    ),
+                    DeviceRegistrationFact(
+                        "UNMATCHED-PHONE",
+                        "Unknown",
+                        None,
+                        None,
+                        "Cisco 8841",
+                        "SIP",
+                        "RISPort70.selectCmDeviceExt",
+                        device_class="Phone",
+                    ),
+                ],
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        payload = HtmlReportBuilder(customer_safe=True).build(report)
+        reconciliation = payload[
+            payload.index("<h2>Inventory / Runtime Reconciliation</h2>") : payload.index(
+                "<h2>Detailed Device Inventory</h2>"
+            )
+        ]
+
+        self.assertIn("Configured Endpoint Runtime Coverage", payload)
+        self.assertIn("Hub_None", payload)
+        self.assertIn("did not cause the missing runtime observations", payload)
+        self.assertIn("Call Manager Runtime Resources", payload)
+        self.assertIn("SIP Trunks", payload)
+        self.assertIn("Annunciators", payload)
+        self.assertIn("TRUNK-1", payload)
+        self.assertIn("ANN-PUB", payload)
+        self.assertNotIn("TRUNK-1", reconciliation)
+        self.assertNotIn("ANN-PUB", reconciliation)
+        self.assertIn("UNMATCHED-PHONE", reconciliation)
+        self.assertNotIn("Inventory-only Registration-capable or Unclassified Devices", payload)
 
     def test_axl_skipped_phone_inventory_note_marks_devices_skipped(self) -> None:
         report = AssessmentReport(
