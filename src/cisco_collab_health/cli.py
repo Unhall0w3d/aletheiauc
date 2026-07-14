@@ -233,6 +233,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Prompt to enroll an unknown UCOS SSH host key after out-of-band fingerprint verification.",
     )
+    parser.add_argument(
+        "--ssh-parallel-workers",
+        type=int,
+        default=3,
+        help="Maximum independent UCOS nodes collected concurrently after SSH preflight (default: 3).",
+    )
     return parser
 
 
@@ -257,6 +263,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.ssh_parallel_workers < 1:
+        parser.error("--ssh-parallel-workers must be at least 1")
     if args.assessment_profile and args.profile:
         parser.error("--assessment-profile cannot be combined with --profile")
     if args.assessment_profile and args.product != "cucm":

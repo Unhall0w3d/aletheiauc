@@ -72,11 +72,13 @@ def run_assessment(
     tls_policy = tls_policy_from_args(args)
     host_key_approval = _host_key_approval(args)
     host_key_enrollment = host_key_approval is not None
+    ssh_parallel_workers = getattr(args, "ssh_parallel_workers", 3)
     context = CollectionContext(
         product=args.product,
         tls=tls_policy,
         accept_new_host_key=host_key_enrollment,
         host_key_approval=host_key_approval,
+        ssh_parallel_workers=ssh_parallel_workers,
         collect_phone_inventory=args.collect_phone_inventory,
         phone_inventory_page_size=args.phone_inventory_page_size,
         phone_inventory_max_devices=args.phone_inventory_max_devices,
@@ -124,6 +126,7 @@ def run_assessment(
             tls=tls_policy,
             accept_new_host_key=host_key_enrollment,
             host_key_approval=host_key_approval,
+            ssh_parallel_workers=ssh_parallel_workers,
         )
         artifact_store = _create_artifact_store(args, status, profile_name, run_started)
         context = replace(context, artifact_store=artifact_store)
@@ -294,6 +297,7 @@ def run_multi_assessment(
     tls_policy = tls_policy_from_args(args)
     host_key_approval = _host_key_approval(args)
     host_key_enrollment = host_key_approval is not None
+    ssh_parallel_workers = getattr(args, "ssh_parallel_workers", 3)
     run_started = datetime.now()
     log_store = _create_log_store(args, status, assessment_name, run_started)
     _write_log_manifest(log_store, profile_name=assessment_name, publisher_ip=None)
@@ -341,6 +345,7 @@ def run_multi_assessment(
             artifact_store=artifact_store,
             accept_new_host_key=host_key_enrollment,
             host_key_approval=host_key_approval,
+            ssh_parallel_workers=ssh_parallel_workers,
         )
         preflight = None
         if target.technology == "cucm":

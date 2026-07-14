@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Protocol
 
 from cisco_collab_health.collectors.base import CollectionResult
+from cisco_collab_health.collectors.ssh_preflight import (
+    collect_preflighted_nodes,
+    preflight_ssh_nodes,
+)
 from cisco_collab_health.models.facts import AssessmentFacts, PlatformCheckFact
 from cisco_collab_health.models.runtime import CollectionContext
 from cisco_collab_health.transport.ssh import SshCommandResult, SshCommandTimeout, UcosSshSession
@@ -51,28 +55,43 @@ class CucmPlatformCollector:
         facts = AssessmentFacts()
         warnings: list[str] = []
         nodes = tuple(dict.fromkeys(context.discovered_nodes or (context.publisher_ip or context.target,)))
-        for node in filter(None, nodes):
-            node_context = replace(context, target=node, publisher_ip=node)
-            try:
-                with self.session_factory(node_context) as session:
-                    for definition in CUCM_COMMAND_CATALOG:
-                        try:
-                            result = session.execute(definition.command, timeout_seconds=definition.timeout_seconds)
-                        except SshCommandTimeout as exc:
-                            if context.artifact_store is not None and exc.output:
-                                context.artifact_store.write_command_output(node, definition.command, exc.output)
-                            warnings.append(f"CUCM CLI '{definition.command}' on {node} did not return to the prompt.")
-                            facts.platform_checks.append(_check(node, definition, "incomplete", exc.output, incomplete=True))
-                            continue
-                        except Exception as exc:
-                            warnings.append(f"CUCM CLI '{definition.command}' on {node} failed: {exc}")
-                            continue
-                        if context.artifact_store is not None:
-                            context.artifact_store.write_command_output(node, definition.command, result.output)
-                        facts.platform_checks.append(_check(node, definition, "collected", result.output))
-            except Exception as exc:
-                warnings.append(f"CUCM SSH session failed on {node}: {exc}")
+        ready, preflight_warnings = preflight_ssh_nodes(
+            context, (node for node in nodes if node), self.session_factory
+        )
+        warnings.extend(preflight_warnings)
+        for node_facts, node_warnings in collect_preflighted_nodes(
+            ready, context.ssh_parallel_workers, self._collect_node
+        ):
+            facts.merge(node_facts)
+            warnings.extend(node_warnings)
         return CollectionResult(self.name, facts, warnings=warnings)
+
+    def _collect_node(self, context: CollectionContext) -> tuple[AssessmentFacts, list[str]]:
+        """Collect one trusted node; commands remain serial within its shell session."""
+
+        facts = AssessmentFacts()
+        warnings: list[str] = []
+        node = context.publisher_ip or context.target or "unknown"
+        try:
+            with self.session_factory(context) as session:
+                for definition in CUCM_COMMAND_CATALOG:
+                    try:
+                        result = session.execute(definition.command, timeout_seconds=definition.timeout_seconds)
+                    except SshCommandTimeout as exc:
+                        if context.artifact_store is not None and exc.output:
+                            context.artifact_store.write_command_output(node, definition.command, exc.output)
+                        warnings.append(f"CUCM CLI '{definition.command}' on {node} did not return to the prompt.")
+                        facts.platform_checks.append(_check(node, definition, "incomplete", exc.output, incomplete=True))
+                        continue
+                    except Exception as exc:
+                        warnings.append(f"CUCM CLI '{definition.command}' on {node} failed: {exc}")
+                        continue
+                    if context.artifact_store is not None:
+                        context.artifact_store.write_command_output(node, definition.command, result.output)
+                    facts.platform_checks.append(_check(node, definition, "collected", result.output))
+        except Exception as exc:
+            warnings.append(f"CUCM SSH session failed on {node}: {exc}")
+        return facts, warnings
 
 
 def _check(node: str, definition: UcosCommand, status: str, output: str, *, incomplete: bool = False) -> PlatformCheckFact:

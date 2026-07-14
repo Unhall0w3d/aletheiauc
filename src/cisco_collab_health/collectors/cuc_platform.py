@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Protocol
 
 from cisco_collab_health.collectors.base import CollectionResult
+from cisco_collab_health.collectors.ssh_preflight import (
+    collect_preflighted_nodes,
+    preflight_ssh_nodes,
+)
 from cisco_collab_health.models.facts import (
     AssessmentFacts,
     ClusterIdentity,
@@ -135,22 +139,53 @@ class CucPlatformCollector:
         publisher = context.publisher_ip or context.target
         if not publisher:
             return CollectionResult(self.name, facts, warnings=["CUC target is missing."])
+        publisher_contexts, preflight_warnings = preflight_ssh_nodes(
+            context, (publisher,), self.session_factory
+        )
+        warnings.extend(preflight_warnings)
+        if not publisher_contexts:
+            return CollectionResult(self.name, facts, warnings=warnings, notes=notes)
         cluster_output = self._collect_cluster_listing(context, publisher, facts, warnings)
         for cluster_node in _cuc_cluster_nodes(cluster_output, target_id=context.target_id):
             facts.add_node(cluster_node)
         nodes = tuple(dict.fromkeys(context.discovered_nodes or tuple(
             item.address or item.name for item in facts.nodes
         ) or (publisher,)))
-        for node in filter(None, nodes):
-            node_version = self._collect_node(
-                replace(context, target=node, publisher_ip=node), node, facts, warnings
-            )
+        remaining_nodes = tuple(node for node in nodes if node and node != publisher)
+        additional_contexts, additional_warnings = preflight_ssh_nodes(
+            context, remaining_nodes, self.session_factory
+        )
+        warnings.extend(additional_warnings)
+        ready_by_node = {publisher: publisher_contexts[0]}
+        ready_by_node.update(
+            {
+                node: item
+                for item in additional_contexts
+                if (node := item.publisher_ip or item.target) is not None
+            }
+        )
+        ready = [ready_by_node[node] for node in nodes if node in ready_by_node]
+        for node, node_facts, node_warnings, node_version in collect_preflighted_nodes(
+            ready, context.ssh_parallel_workers, self._collect_node_result
+        ):
+            facts.merge(node_facts)
+            warnings.extend(node_warnings)
             if node == publisher and node_version:
                 version = node_version
-        self._collect_informix_probes(context, publisher, facts, warnings)
+        if publisher in ready_by_node:
+            self._collect_informix_probes(ready_by_node[publisher], publisher, facts, warnings)
         if version:
             facts.cluster = ClusterIdentity(publisher, "Cisco Unity Connection", version)
         return CollectionResult(self.name, facts, warnings=warnings, notes=notes)
+
+    def _collect_node_result(
+        self, context: CollectionContext
+    ) -> tuple[str, AssessmentFacts, list[str], str | None]:
+        facts = AssessmentFacts()
+        warnings: list[str] = []
+        node = context.publisher_ip or context.target or "unknown"
+        version = self._collect_node(context, node, facts, warnings)
+        return node, facts, warnings, version
 
     def _collect_cluster_listing(
         self, context: CollectionContext, node: str, facts: AssessmentFacts, warnings: list[str]

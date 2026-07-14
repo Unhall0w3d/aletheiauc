@@ -16,3 +16,15 @@ remains a failure requiring review; AletheiaUC never silently accepts one.
 
 These behaviors are fixture-tested. Private-CA and UCOS enrollment outcomes
 must still be validated against each customer environment before production use.
+
+## SSH collection execution
+
+Before CLI collection, AletheiaUC opens and closes an SSH shell for each
+discovered UCOS node sequentially. This ensures unknown-key approval prompts
+and writes to `known_hosts` are never interleaved. Nodes that fail key approval,
+authentication, or shell setup are excluded from CLI collection and reported as
+preflight warnings. Once this phase completes, independent nodes are collected
+in parallel (three workers by default) using strict saved-key validation only;
+commands within each node's shell remain strictly sequential. Use
+`--ssh-parallel-workers 1` to disable node-level parallelism, or choose another
+bounded worker count for a suitable environment.
