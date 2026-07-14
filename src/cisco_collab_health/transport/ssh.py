@@ -94,9 +94,6 @@ class UcosSshSession:
                 known_hosts.parent.mkdir(parents=True, exist_ok=True)
                 self._host_key_policy = HostKeyApprovalPolicy(self.context.host_key_approval)
                 self.client.set_missing_host_key_policy(self._host_key_policy)
-            elif self.context.accept_new_host_key:
-                known_hosts.parent.mkdir(parents=True, exist_ok=True)
-                self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             else:
                 self.client.set_missing_host_key_policy(paramiko.RejectPolicy())
         else:
@@ -112,8 +109,7 @@ class UcosSshSession:
             allow_agent=False,
         )
         if self.client_factory is None and (
-            self.context.accept_new_host_key
-            or (self._host_key_policy is not None and self._host_key_policy.approved)
+            self._host_key_policy is not None and self._host_key_policy.approved
         ):
             self.client.save_host_keys(str(Path.home() / ".ssh" / "known_hosts"))
         transport = self.client.get_transport()

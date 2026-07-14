@@ -41,10 +41,12 @@ from cisco_collab_health.technologies import load_plugins
 from cisco_collab_health.transport.tls import TlsPolicy
 
 
-def _interactive_host_key_approval(args: argparse.Namespace) -> HostKeyApproval | None:
-    """Return the menu-only SSH host-key approval prompt, when enabled."""
+def _host_key_approval(args: argparse.Namespace) -> HostKeyApproval | None:
+    """Return an explicit SSH host-key approval prompt when enrollment is enabled."""
 
-    if not getattr(args, "_prompt_ssh_host_keys", False):
+    if not (
+        getattr(args, "_prompt_ssh_host_keys", False) or args.accept_new_host_key
+    ):
         return None
 
     def approve(hostname: str, algorithm: str, fingerprint: str) -> bool:
@@ -68,8 +70,8 @@ def run_assessment(
     """Run one assessment from parsed CLI arguments and an optional profile."""
 
     tls_policy = tls_policy_from_args(args)
-    host_key_approval = _interactive_host_key_approval(args)
-    host_key_enrollment = args.accept_new_host_key or host_key_approval is not None
+    host_key_approval = _host_key_approval(args)
+    host_key_enrollment = host_key_approval is not None
     context = CollectionContext(
         product=args.product,
         tls=tls_policy,
@@ -290,8 +292,8 @@ def run_multi_assessment(
     """Run independently credentialed technology targets into one report."""
 
     tls_policy = tls_policy_from_args(args)
-    host_key_approval = _interactive_host_key_approval(args)
-    host_key_enrollment = args.accept_new_host_key or host_key_approval is not None
+    host_key_approval = _host_key_approval(args)
+    host_key_enrollment = host_key_approval is not None
     run_started = datetime.now()
     log_store = _create_log_store(args, status, assessment_name, run_started)
     _write_log_manifest(log_store, profile_name=assessment_name, publisher_ip=None)

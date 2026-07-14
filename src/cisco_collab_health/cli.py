@@ -231,7 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--accept-new-host-key",
         action="store_true",
-        help="Enroll a verified UCOS SSH host key on first use; verify its fingerprint out of band first.",
+        help="Prompt to enroll an unknown UCOS SSH host key after out-of-band fingerprint verification.",
     )
     return parser
 
