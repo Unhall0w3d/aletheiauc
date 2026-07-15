@@ -309,6 +309,7 @@ def _prompt_run_mode(args: argparse.Namespace) -> argparse.Namespace | None:
     # Interactive assessments ask about each actual, previously unseen SSH key.
     # This is deliberately separate from the non-interactive CLI enrollment flag.
     run_args._prompt_ssh_host_keys = True
+    run_args._prompt_ssh_password_retry = True
     while True:
         print("\nRun Options\n===========")
         print("1. Output and reports")

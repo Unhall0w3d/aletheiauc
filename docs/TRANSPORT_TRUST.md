@@ -28,3 +28,9 @@ in parallel (three workers by default) using strict saved-key validation only;
 commands within each node's shell remain strictly sequential. Use
 `--ssh-parallel-workers 1` to disable node-level parallelism, or choose another
 bounded worker count for a suitable environment.
+
+If this preflight receives an SSH authentication failure, an interactive run
+offers one node-specific Platform/CLI password retry. The replacement is used
+only for that node during the current run and is never written to the profile
+or credential store. Key, network, and shell failures do not trigger a password
+prompt.

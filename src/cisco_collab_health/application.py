@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from getpass import getpass
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import datetime
@@ -25,7 +27,11 @@ from cisco_collab_health.config import (
 from cisco_collab_health.engine import AssessmentEngine
 from cisco_collab_health.interfaces import PreflightResult, run_publisher_preflight
 from cisco_collab_health.models.assessment import AssessmentReport
-from cisco_collab_health.models.runtime import CollectionContext, HostKeyApproval
+from cisco_collab_health.models.runtime import (
+    CollectionContext,
+    HostKeyApproval,
+    SshPasswordRetry,
+)
 from cisco_collab_health.reports.html import HtmlReportBuilder
 from cisco_collab_health.reports.json import JsonReportBuilder
 from cisco_collab_health.reports.summary import ExecutiveSummaryBuilder
@@ -62,6 +68,22 @@ def _host_key_approval(args: argparse.Namespace) -> HostKeyApproval | None:
     return approve
 
 
+def _ssh_password_retry(args: argparse.Namespace) -> SshPasswordRetry | None:
+    """Return an interactive prompt for a node with different SSH credentials."""
+
+    if not getattr(args, "_prompt_ssh_password_retry", False) and not sys.stdin.isatty():
+        return None
+
+    def retry(hostname: str, _error: str) -> str | None:
+        print(f"\nSSH authentication failed for {hostname}.")
+        password = getpass(
+            "Platform/CLI password for this node (blank skips this node; not saved): "
+        )
+        return password or None
+
+    return retry
+
+
 def run_assessment(
     args: argparse.Namespace,
     status: StatusPrinter,
@@ -71,6 +93,7 @@ def run_assessment(
 
     tls_policy = tls_policy_from_args(args)
     host_key_approval = _host_key_approval(args)
+    ssh_password_retry = _ssh_password_retry(args)
     host_key_enrollment = host_key_approval is not None
     ssh_parallel_workers = getattr(args, "ssh_parallel_workers", 3)
     context = CollectionContext(
@@ -78,6 +101,7 @@ def run_assessment(
         tls=tls_policy,
         accept_new_host_key=host_key_enrollment,
         host_key_approval=host_key_approval,
+        ssh_password_retry=ssh_password_retry,
         progress=status.info,
         ssh_parallel_workers=ssh_parallel_workers,
         collect_phone_inventory=args.collect_phone_inventory,
@@ -129,6 +153,7 @@ def run_assessment(
             tls=tls_policy,
             accept_new_host_key=host_key_enrollment,
             host_key_approval=host_key_approval,
+            ssh_password_retry=ssh_password_retry,
             progress=status.info,
             ssh_parallel_workers=ssh_parallel_workers,
         )
@@ -300,6 +325,7 @@ def run_multi_assessment(
 
     tls_policy = tls_policy_from_args(args)
     host_key_approval = _host_key_approval(args)
+    ssh_password_retry = _ssh_password_retry(args)
     host_key_enrollment = host_key_approval is not None
     ssh_parallel_workers = getattr(args, "ssh_parallel_workers", 3)
     run_started = datetime.now()
@@ -350,6 +376,7 @@ def run_multi_assessment(
             artifact_store=artifact_store,
             accept_new_host_key=host_key_enrollment,
             host_key_approval=host_key_approval,
+            ssh_password_retry=ssh_password_retry,
             progress=status.info,
             ssh_parallel_workers=ssh_parallel_workers,
         )

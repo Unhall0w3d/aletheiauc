@@ -11,6 +11,7 @@ from cisco_collab_health.transport.tls import TlsPolicy
 
 HostKeyApproval = Callable[[str, str, str], bool]
 ProgressReporter = Callable[[str], None]
+SshPasswordRetry = Callable[[str, str], str | None]
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class CollectionContext:
     timeout_seconds: int = 30
     accept_new_host_key: bool = False
     host_key_approval: HostKeyApproval | None = field(default=None, repr=False, compare=False)
+    ssh_password_retry: SshPasswordRetry | None = field(default=None, repr=False, compare=False)
     progress: ProgressReporter | None = field(default=None, repr=False, compare=False)
     ssh_parallel_workers: int = 3
     artifact_store: Any | None = field(default=None, repr=False)
