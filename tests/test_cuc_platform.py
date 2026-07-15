@@ -46,20 +46,28 @@ class FakeSession:
 
 class CucPlatformCollectorTests(unittest.TestCase):
     def test_command_catalog_has_unique_stable_ids_and_bounded_timeouts(self) -> None:
-        self.assertEqual(len({item.command_id for item in CUC_COMMAND_CATALOG}), len(CUC_COMMAND_CATALOG))
+        self.assertEqual(
+            len({item.command_id for item in CUC_COMMAND_CATALOG}), len(CUC_COMMAND_CATALOG)
+        )
         self.assertTrue(all(item.timeout_seconds > 0 for item in CUC_COMMAND_CATALOG))
         self.assertEqual(tuple(item.command for item in CUC_COMMAND_CATALOG), CUC_SAFE_CLI_COMMANDS)
 
     def test_cli_summaries_parse_diagnostics_services_and_core_state(self) -> None:
         self.assertEqual(
-            _cuc_cli_summary("utils diagnose test", "test - a : Passed\nskip - b : later")["passed"],
+            _cuc_cli_summary("utils diagnose test", "test - a : Passed\nskip - b : later")[
+                "passed"
+            ],
             "1",
         )
         self.assertEqual(
-            _cuc_cli_summary("utils service list", "A[STARTED]\nB[STOPPED]  Service Not Activated")["stopped"],
+            _cuc_cli_summary("utils service list", "A[STARTED]\nB[STOPPED]  Service Not Activated")[
+                "stopped"
+            ],
             "1",
         )
-        self.assertEqual(_cuc_cli_summary("utils core active list", "No core files found")["core_files"], "0")
+        self.assertEqual(
+            _cuc_cli_summary("utils core active list", "No core files found")["core_files"], "0"
+        )
         status = _cuc_cli_summary(
             "show status",
             "21:08:27 up 328 days, 5:41\nDisk/active 10K 1K 9K (90%)\nDisk/logging 10K 1K 9K (95%)",
@@ -109,10 +117,15 @@ class CucPlatformCollectorTests(unittest.TestCase):
 
             self.assertEqual(
                 commands,
-                ["show network cluster", *[
-                    command for command in CUC_SAFE_CLI_COMMANDS
-                    if command != "show network cluster"
-                ], *[probe.command for probe in CUC_INFORMIX_PROBE_CATALOG]],
+                [
+                    "show network cluster",
+                    *[
+                        command
+                        for command in CUC_SAFE_CLI_COMMANDS
+                        if command != "show network cluster"
+                    ],
+                    *[probe.command for probe in CUC_INFORMIX_PROBE_CATALOG],
+                ],
             )
             expected = len(CUC_SAFE_CLI_COMMANDS) + len(CUC_INFORMIX_PROBE_CATALOG)
             self.assertEqual(len(result.facts.platform_checks), expected)
@@ -122,10 +135,15 @@ class CucPlatformCollectorTests(unittest.TestCase):
         commands: list[str] = []
 
         class ClusterSession(FakeSession):
-            def execute(self, command: str, *, timeout_seconds: int | None = None) -> SshCommandResult:
+            def execute(
+                self, command: str, *, timeout_seconds: int | None = None
+            ) -> SshCommandResult:
                 self.commands.append(f"{self.context.publisher_ip}:{command}")
                 if command == "show network cluster":
-                    return SshCommandResult(command, "192.0.2.20 cuc-pub.example cuc-pub Publisher\n192.0.2.21 cuc-sub.example cuc-sub Subscriber")
+                    return SshCommandResult(
+                        command,
+                        "192.0.2.20 cuc-pub.example cuc-pub Publisher\n192.0.2.21 cuc-sub.example cuc-sub Subscriber",
+                    )
                 return SshCommandResult(command, f"output for {command}")
 
             def __init__(self, context: CollectionContext, commands: list[str]) -> None:
@@ -152,8 +170,12 @@ class CucPlatformCollectorTests(unittest.TestCase):
         self.assertNotIn(">", duplicate_probe.query)
 
         unsafe = CucInformixProbe(
-            "unsafe", "unitydirdb", "select first 100 objectid from vw_user; delete from vw_user",
-            "Unsafe", "objectid", (),
+            "unsafe",
+            "unitydirdb",
+            "select first 100 objectid from vw_user; delete from vw_user",
+            "Unsafe",
+            "objectid",
+            (),
         )
         with self.assertRaises(ValueError):
             _validate_cuc_informix_probe(unsafe)
@@ -168,10 +190,13 @@ rows: 2"""
 
         rows = _parse_cuc_dbquery_rows(output)
 
-        self.assertEqual(rows, [
-            {"dtmfaccessid": "1000", "occurrencecount": "2"},
-            {"dtmfaccessid": "2000", "occurrencecount": "3"},
-        ])
+        self.assertEqual(
+            rows,
+            [
+                {"dtmfaccessid": "1000", "occurrencecount": "2"},
+                {"dtmfaccessid": "2000", "occurrencecount": "3"},
+            ],
+        )
         self.assertTrue(_cuc_dbquery_zero_rows("No records found"))
         self.assertTrue(_cuc_dbquery_zero_rows("rows: 0"))
         self.assertFalse(_cuc_dbquery_zero_rows("output for query"))
@@ -179,17 +204,23 @@ rows: 2"""
     def test_informix_results_become_experimental_configuration_facts(self) -> None:
         class SqlSession(FakeSession):
             def execute(
-                self, command: str, *, timeout_seconds: int | None = None,
+                self,
+                command: str,
+                *,
+                timeout_seconds: int | None = None,
             ) -> SshCommandResult:
                 self.commands.append(command)
                 if "duplicate_extensions" in command:
                     raise AssertionError("probe IDs are not sent as SQL")
                 if command.startswith("run cuc dbquery") and "vw_user" in command:
-                    return SshCommandResult(command, """dtmfaccessid occurrencecount
+                    return SshCommandResult(
+                        command,
+                        """dtmfaccessid occurrencecount
 ------------ ---------------
 1000         2
 
-rows: 1""")
+rows: 1""",
+                    )
                 return SshCommandResult(command, f"output for {command}")
 
         commands: list[str] = []
@@ -198,19 +229,22 @@ rows: 1""")
         ).collect(CollectionContext(publisher_ip="192.0.2.20"))
 
         duplicate = next(
-            item for item in result.facts.configuration_objects
+            item
+            for item in result.facts.configuration_objects
             if item.object_type == "CucSqlDuplicateExtension"
         )
         self.assertEqual(duplicate.name, "1000")
         self.assertEqual(duplicate.details["occurrencecount"], "2")
         self.assertEqual(duplicate.details["experimental"], "true")
 
-        html = HtmlReportBuilder(customer_safe=True).build(
+        engineering = HtmlReportBuilder().build(AssessmentReport(result.facts, [result], []))
+        customer = HtmlReportBuilder(customer_safe=True).build(
             AssessmentReport(result.facts, [result], [])
         )
-        self.assertIn("Unity Connection Experimental SQL Validation", html)
-        self.assertIn("Duplicate directory extensions", html)
-        self.assertIn(">1000<", html)
+        self.assertIn("Unity Connection Experimental SQL Validation", engineering)
+        self.assertIn("Duplicate directory extensions", engineering)
+        self.assertIn(">1000<", engineering)
+        self.assertNotIn("Unity Connection Experimental SQL Validation", customer)
 
     def test_collector_retains_partial_output_from_long_running_command(self) -> None:
         class PartialSession(FakeSession):
@@ -241,5 +275,7 @@ rows: 1""")
             self.assertIn("did not return to the prompt", result.warnings[0])
             self.assertIn(
                 "diagnostic output in progress",
-                (artifacts.root / "nodes" / "192.0.2.20" / "cli" / "utils_diagnose_test.txt").read_text(),
+                (
+                    artifacts.root / "nodes" / "192.0.2.20" / "cli" / "utils_diagnose_test.txt"
+                ).read_text(),
             )

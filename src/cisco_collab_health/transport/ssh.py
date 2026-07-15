@@ -15,6 +15,11 @@ from cisco_collab_health.models.runtime import CollectionContext
 
 UCOS_PROMPT = re.compile(r"(?m)^admin:\s*$")
 PAGER_MARKERS = ("--More--", "<--- More --->", "Press any key")
+_AUTHENTICATION_FAILURES = {
+    "AuthenticationException",
+    "BadAuthenticationType",
+    "PasswordRequiredException",
+}
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,15 @@ class SshCommandTimeout(TimeoutError):
         super().__init__("Timed out waiting for the UCOS admin prompt")
         self.output = output
         self.paged = paged
+
+
+def is_ssh_authentication_failure(exc: Exception) -> bool:
+    """Identify authentication failures without treating network failures as credentials."""
+
+    return (
+        exc.__class__.__name__ in _AUTHENTICATION_FAILURES
+        or "authentication failed" in str(exc).lower()
+    )
 
 
 def ssh_host_key_fingerprint(key: Any) -> str:

@@ -5,10 +5,12 @@ from __future__ import annotations
 from base64 import b64encode
 from collections import Counter
 from dataclasses import dataclass
-from functools import lru_cache
 from html import escape
+import json
+import os
 from pathlib import Path
 import re
+from typing import Any
 
 from cisco_collab_health.models.assessment import AssessmentReport
 from cisco_collab_health.models.facts import (
@@ -30,6 +32,7 @@ from cisco_collab_health.reports.formatting import (
 )
 from cisco_collab_health.reports.reconciliation import (
     build_inventory_runtime_reconciliation,
+    runtime_resource_category,
 )
 
 
@@ -41,6 +44,7 @@ class ReportTemplate:
     title: str
     eyebrow: str
     tagline: str
+    footer_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,8 @@ class ReportTheme:
     watermark_opacity: str
     show_hero_logo: bool
     show_footer_logo: bool
+    package_root: Path | None = None
+    stylesheet: str | None = None
 
 
 REPORT_TEMPLATES = {
@@ -64,12 +70,6 @@ REPORT_TEMPLATES = {
         title="Collaboration Health Assessment",
         eyebrow="Engineering health report",
         tagline="Evidence-led review and actionable findings",
-    ),
-    "comsource": ReportTemplate(
-        key="comsource",
-        title="ComSource Collaboration Health Assessment",
-        eyebrow="Customer assessment report",
-        tagline="Collaboration platform health and readiness",
     ),
 }
 
@@ -94,41 +94,124 @@ REPORT_THEMES = {
         show_hero_logo=False,
         show_footer_logo=False,
     ),
-    "comsource": ReportTheme(
-        key="comsource",
-        asset_directory="comsource",
-        slots={
-            "logo-primary": "ComSource_Logo.svg",
-            "hero-background": "hero-background.svg",
-            "executive-background": "section-band.svg",
-            "chapter-findings": "section-band.svg",
-            "chapter-scope": "section-band.svg",
-            "chapter-infrastructure": "section-band.svg",
-            "chapter-analysis": "section-band.svg",
-            "chapter-evidence": "section-band.svg",
-            "recommendation-background": "section-band.svg",
-            "section-band": "section-band.svg",
-            "divider-horizontal": "divider-horizontal.svg",
-            "watermark": "watermark.svg",
-            "footer-background": "footer-background.svg",
-            "status-icons": "status-icons.svg",
-        },
-        colors={
-            "page": "#EAF7FC",
-            "surface": "#FFFFFF",
-            "text": "#20283A",
-            "muted": "#667085",
-            "accent": "#2E1D67",
-            "cyan": "#0096D6",
-            "gold": "#0096D6",
-        },
-        hero_overlay="linear-gradient(90deg,rgba(8,13,34,.98) 0%,rgba(16,22,51,.9) 48%,rgba(46,29,103,.25) 100%)",
-        hero_focal_point="72% 50%",
-        watermark_opacity=".05",
-        show_hero_logo=True,
-        show_footer_logo=True,
-    ),
 }
+
+
+EXTERNAL_TEMPLATE_DIRECTORY_ENV = "ALETHEIAUC_REPORT_TEMPLATE_DIR"
+EXTERNAL_TEMPLATE_SCHEMA_VERSION = 1
+_REQUIRED_THEME_COLORS = ("page", "surface", "text", "muted", "accent", "cyan", "gold")
+
+
+def external_template_directory() -> Path:
+    """Return the user-controlled directory containing optional private template packs."""
+
+    override = os.environ.get(EXTERNAL_TEMPLATE_DIRECTORY_ENV)
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".config" / "aletheiauc" / "report-templates"
+
+
+def _manifest_mapping(value: Any, field: str) -> dict[str, Any]:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ValueError(f"Template manifest field '{field}' must be an object.")
+    return value
+
+
+def _manifest_string(mapping: dict[str, Any], field: str) -> str:
+    value = mapping.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Template manifest field '{field}' must be a non-empty string.")
+    return value.strip()
+
+
+def _manifest_bool(mapping: dict[str, Any], field: str) -> bool:
+    value = mapping.get(field)
+    if not isinstance(value, bool):
+        raise ValueError(f"Template manifest field '{field}' must be a boolean.")
+    return value
+
+
+def _safe_pack_path(package_root: Path, relative_path: str) -> Path:
+    candidate = (package_root / relative_path).resolve()
+    if not candidate.is_relative_to(package_root.resolve()):
+        raise ValueError("Template manifest paths must remain inside the template pack.")
+    return candidate
+
+
+def _load_external_template(manifest_path: Path) -> tuple[ReportTemplate, ReportTheme]:
+    raw: Any = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = _manifest_mapping(raw, "root")
+    if manifest.get("schema_version") != EXTERNAL_TEMPLATE_SCHEMA_VERSION:
+        raise ValueError("Unsupported external report-template schema version.")
+
+    key = _manifest_string(manifest, "key")
+    if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", key) is None:
+        raise ValueError("Template key may contain only lowercase letters, numbers, '_' and '-'.")
+
+    template_data = _manifest_mapping(manifest.get("template"), "template")
+    theme_data = _manifest_mapping(manifest.get("theme"), "theme")
+    slots_data = _manifest_mapping(theme_data.get("slots"), "theme.slots")
+    colors_data = _manifest_mapping(theme_data.get("colors"), "theme.colors")
+    slots = {slot: _manifest_string(slots_data, slot) for slot in slots_data}
+    colors = {name: _manifest_string(colors_data, name) for name in _REQUIRED_THEME_COLORS}
+
+    package_root = manifest_path.parent.resolve()
+    asset_directory = _manifest_string(theme_data, "asset_directory")
+    stylesheet = _manifest_string(theme_data, "stylesheet")
+    _safe_pack_path(package_root, asset_directory)
+    _safe_pack_path(package_root, stylesheet)
+    for filename in slots.values():
+        _safe_pack_path(package_root / asset_directory, filename)
+
+    footer_label = template_data.get("footer_label")
+    if footer_label is not None and not isinstance(footer_label, str):
+        raise ValueError("Template manifest field 'footer_label' must be a string.")
+
+    return (
+        ReportTemplate(
+            key=key,
+            title=_manifest_string(template_data, "title"),
+            eyebrow=_manifest_string(template_data, "eyebrow"),
+            tagline=_manifest_string(template_data, "tagline"),
+            footer_label=footer_label.strip() if isinstance(footer_label, str) else None,
+        ),
+        ReportTheme(
+            key=key,
+            asset_directory=asset_directory,
+            slots=slots,
+            colors=colors,
+            hero_overlay=_manifest_string(theme_data, "hero_overlay"),
+            hero_focal_point=_manifest_string(theme_data, "hero_focal_point"),
+            watermark_opacity=_manifest_string(theme_data, "watermark_opacity"),
+            show_hero_logo=_manifest_bool(theme_data, "show_hero_logo"),
+            show_footer_logo=_manifest_bool(theme_data, "show_footer_logo"),
+            package_root=package_root,
+            stylesheet=stylesheet,
+        ),
+    )
+
+
+def _report_template_registry() -> tuple[dict[str, ReportTemplate], dict[str, ReportTheme]]:
+    templates = dict(REPORT_TEMPLATES)
+    themes = dict(REPORT_THEMES)
+    root = external_template_directory()
+    if not root.is_dir():
+        return templates, themes
+
+    for manifest_path in sorted(root.glob("*/manifest.json")):
+        try:
+            template, theme = _load_external_template(manifest_path)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if template.key in templates:
+            continue
+        templates[template.key] = template
+        themes[theme.key] = theme
+    return templates, themes
+
+
+def _report_theme(template: str) -> ReportTheme:
+    return _report_template_registry()[1][template]
 
 
 def _natural_sort_key(value: str) -> tuple[tuple[int, object], ...]:
@@ -157,7 +240,6 @@ def _collaboration_node_sort_key(node: CollaborationNode) -> tuple[object, ...]:
     )
 
 
-@lru_cache(maxsize=None)
 def _theme_asset_data_uri(theme: str, slot: str) -> str:
     """Resolve one named asset slot as a standalone data URI."""
 
@@ -179,7 +261,7 @@ def _theme_asset_data_uri(theme: str, slot: str) -> str:
 def _optional_theme_asset_data_uri(theme: str, slot: str) -> str:
     """Resolve an optional presentation asset, or no image for a text-first theme."""
 
-    if slot not in REPORT_THEMES[theme].slots:
+    if slot not in _report_theme(theme).slots:
         return ""
     return _theme_asset_data_uri(theme, slot)
 
@@ -187,28 +269,46 @@ def _optional_theme_asset_data_uri(theme: str, slot: str) -> str:
 def _theme_asset_path(theme: str, slot: str) -> Path:
     """Return the filesystem path backing one theme asset slot."""
 
-    package = REPORT_THEMES[theme]
+    package = _report_theme(theme)
     filename = package.slots[slot]
+    if package.package_root is not None:
+        return _safe_pack_path(package.package_root / package.asset_directory, filename)
     if filename.startswith("repository:"):
         return Path(__file__).parents[3] / filename.removeprefix("repository:")
     return Path(__file__).with_name("assets") / package.asset_directory / filename
 
 
+def _theme_stylesheet_path(theme: str) -> Path | None:
+    package = _report_theme(theme)
+    if package.package_root is None or package.stylesheet is None:
+        return None
+    return _safe_pack_path(package.package_root, package.stylesheet)
+
+
+def _theme_stylesheet(theme: str) -> str:
+    path = _theme_stylesheet_path(theme)
+    return path.read_text(encoding="utf-8") if path is not None else ""
+
+
 def missing_template_assets(template: str) -> tuple[Path, ...]:
     """Return missing files for a registered template, without rendering it."""
 
-    package = REPORT_THEMES[template]
+    package = _report_theme(template)
     paths = {_theme_asset_path(template, slot) for slot in package.slots}
+    stylesheet = _theme_stylesheet_path(template)
+    if stylesheet is not None:
+        paths.add(stylesheet)
     return tuple(sorted((path for path in paths if not path.is_file()), key=str))
 
 
 def available_report_templates() -> tuple[str, ...]:
     """Return registered templates whose complete asset packs are installed."""
 
+    templates, themes = _report_template_registry()
     return tuple(
         template
-        for template in sorted(REPORT_TEMPLATES)
-        if template in REPORT_THEMES and not missing_template_assets(template)
+        for template in sorted(templates)
+        if template in themes and not missing_template_assets(template)
     )
 
 
@@ -217,11 +317,12 @@ class HtmlReportBuilder:
 
     def __init__(self, *, customer_safe: bool = False, template: str = "aletheiauc") -> None:
         self.customer_safe = customer_safe
+        templates, themes = _report_template_registry()
         try:
-            self.template = REPORT_TEMPLATES[template]
-            self.theme = REPORT_THEMES[template]
+            self.template = templates[template]
+            self.theme = themes[template]
         except KeyError as exc:
-            available = ", ".join(sorted(REPORT_TEMPLATES))
+            available = ", ".join(sorted(templates))
             raise ValueError(
                 f"Unknown HTML report template '{template}'. Registered: {available}."
             ) from exc
@@ -264,9 +365,7 @@ class HtmlReportBuilder:
         )
         footer_image = _optional_theme_asset_data_uri(self.template.key, "footer-background")
         logo_image = _optional_theme_asset_data_uri(self.template.key, "logo-primary")
-        template_css = (
-            self._comsource_css() if self.template.key == "comsource" else self._default_dark_css()
-        )
+        template_css = _theme_stylesheet(self.template.key) or self._default_dark_css()
         template_header = self._template_header(
             header_metadata,
             hero_image=hero_image,
@@ -295,6 +394,10 @@ class HtmlReportBuilder:
         coverage_section = self._coverage_section(report)
         registration_rows = self._registration_rows(report)
         registration_summary_rows = self._registration_summary_rows(report)
+        endpoint_runtime_coverage_section = self._endpoint_runtime_coverage_section(report)
+        call_manager_runtime_resources_section = self._call_manager_runtime_resources_section(
+            report
+        )
         firmware_summary_rows = self._firmware_summary_rows(report)
         firmware_failure_rows = self._firmware_failure_rows(report)
         firmware_failure_detail_rows = self._firmware_failure_detail_rows(report)
@@ -393,17 +496,28 @@ class HtmlReportBuilder:
             "infrastructure",
         )
         analysis_chapter = self._chapter_header(
-            "05 / ANALYSIS",
+            "04 / ANALYSIS" if self.customer_safe else "05 / ANALYSIS",
             "Discovery and Analysis",
             "Collection depth across topology, services, firmware, and configuration",
             "analysis",
         )
         evidence_chapter = self._chapter_header(
-            "06 / EVIDENCE",
+            "05 / EVIDENCE" if self.customer_safe else "06 / EVIDENCE",
             "Appendices and Engineering Evidence",
             "Collector detail, reconciliation, provenance, and inventories",
             "evidence",
         )
+        infrastructure_content = ""
+        analysis_cuc_platform_section = cuc_platform_section
+        if not self.customer_safe:
+            infrastructure_content = (
+                infrastructure_chapter
+                + cuc_inventory_section
+                + cuc_configuration_section
+                + cuc_platform_section
+                + cuc_informix_section
+            )
+            analysis_cuc_platform_section = ""
         body_class = "default-dark" if self.template.key == "aletheiauc" else self.template.key
 
         return f"""<!doctype html>
@@ -763,13 +877,10 @@ class HtmlReportBuilder:
     {scope_chapter}
     {methodology_scope_section}
     {target_scope_section}
-    {infrastructure_chapter}
-    {cuc_inventory_section}
-    {cuc_configuration_section}
-    {cuc_platform_section}
-    {cuc_informix_section}
+    {infrastructure_content}
     {analysis_chapter}
     {coverage_section}
+    {analysis_cuc_platform_section}
     {cluster_section}
     <section>
       <h2>Discovered Nodes</h2>
@@ -811,6 +922,8 @@ class HtmlReportBuilder:
         </tbody>
       </table>
     </section>
+    {endpoint_runtime_coverage_section}
+    {call_manager_runtime_resources_section}
     <section>
       <h2>Device Load Summary</h2>
       {_source_caption("Device Load Summary", report)}
@@ -1341,10 +1454,9 @@ class HtmlReportBuilder:
     </section>"""
 
     def _template_footer(self, *, logo_image: str, footer_image: str) -> str:
-        footer_label = (
-            "Prepared by ComSource, Inc. · Confidential customer report"
-            if self.template.key == "comsource"
-            else f"Collaboration Health Assessment · {'Customer deliverable' if self.customer_safe else 'Engineering report'}"
+        footer_label = self.template.footer_label or (
+            "Collaboration Health Assessment · "
+            f"{'Customer deliverable' if self.customer_safe else 'Engineering report'}"
         )
         logo_markup = (
             f'<img class="rds-logo" src="{logo_image}" alt="{escape(self.template.title)}">'
@@ -1361,11 +1473,6 @@ class HtmlReportBuilder:
         """Shared layout contract plus tokenized theme presentation."""
 
         color = self.theme.colors
-        logo_panel = (
-            ".comsource-report .rds-hero__content > .rds-logo, .comsource-report .rds-footer > .rds-logo { padding: 10px 14px; border-radius: 8px; background: #fff; }"
-            if self.theme.key == "comsource"
-            else ""
-        )
         return f"""
     .rds-report {{
       --rds-page: {color["page"]};
@@ -1438,7 +1545,6 @@ class HtmlReportBuilder:
     .rds-badge {{ align-self: start; padding: 5px 8px; border-radius: 5px; color: #fff; font-size: 11px; font-weight: 700; }}
     .rds-footer {{ min-height: 96px; background: {color["page"]} var(--footer-image) center / cover no-repeat; }}
     .rds-footer .rds-logo {{ max-width: 220px; max-height: 60px; }}
-    {logo_panel}
     @media (max-width: 980px) {{ .rds-metric-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
     @media (max-width: 700px) {{ .rds-report {{ width: calc(100% - 18px); margin-top: 9px; }} .rds-hero {{ min-height: 420px; }} .rds-hero__content {{ padding: 24px 20px 38px; }} .rds-section__body {{ padding: 13px; }} .rds-chapter__copy {{ max-width: 84%; }} .rds-chapter__sigil {{ opacity: .35; }} }}
     @media (max-width: 620px) {{ .rds-executive {{ padding: 24px 18px !important; }} .rds-metric-grid {{ grid-template-columns: minmax(0, 1fr); }} .rds-metric-group > header {{ display: block; }} .rds-metric-group > header p {{ margin-top: 4px; }} }}
@@ -1627,146 +1733,6 @@ class HtmlReportBuilder:
       .aletheiauc-report .report-hero .header-meta { right: 24px; bottom: 20px; left: 24px; }
       .aletheiauc-report .report-feature { display: block; min-height: 0; }
       .aletheiauc-report .rds-metric { background: #fff !important; color: #111 !important; box-shadow: none; }
-    }"""
-
-    @staticmethod
-    def _comsource_css() -> str:
-        """ComSource-only visual layer, based on the supplied branding pack."""
-
-        return """
-    body.comsource-report {
-      background: #eef2f6;
-      color: #20283a;
-    }
-    .comsource-report .report-shell {
-      width: min(1450px, calc(100% - 36px));
-      margin: 24px auto 60px;
-      padding: 0;
-    }
-    .comsource-report .report-hero {
-      min-height: 330px;
-      padding: 34px 42px 46px;
-      border-radius: 16px;
-      background: linear-gradient(90deg, rgba(8, 13, 34, .97) 0%, rgba(16, 22, 51, .92) 49%, rgba(46, 29, 103, .45) 100%), var(--hero-image);
-      background-position: center;
-      background-size: cover;
-      box-shadow: 0 18px 45px rgba(16, 22, 51, .22);
-    }
-    .comsource-report .report-hero::after {
-      inset: auto 0 0;
-      width: auto;
-      height: 7px;
-      background: linear-gradient(90deg, #2e1d67, #0096d6);
-    }
-    .comsource-report .report-hero .masthead { min-height: 0; }
-    .comsource-report .logo-panel {
-      display: inline-flex;
-      align-items: center;
-      padding: 12px 16px;
-      border-radius: 10px;
-      background: #fff;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
-    }
-    .comsource-report .logo-panel img { display: block; width: 265px; max-width: 55vw; height: auto; }
-    .comsource-report .report-hero .eyebrow { margin-top: 30px; color: #62d4ff; }
-    .comsource-report .report-hero h1 { max-width: 780px; color: #fff; font-size: clamp(34px, 5vw, 52px); }
-    .comsource-report .report-hero p { color: #d9e7f5; }
-    .comsource-report .report-hero .header-meta { justify-content: flex-start; max-width: 780px; margin-top: 24px; }
-    .comsource-report .meta-chip { background: rgba(255, 255, 255, .08); color: #fff; }
-    .comsource-report .meta-chip::before { color: #62d4ff; }
-    .comsource-report .rds-transition { height: 42px; background: #eef2f6; }
-    .comsource-report .rds-transition path { filter: drop-shadow(0 0 3px rgba(0, 150, 214, .35)); }
-    .comsource-report main { display: grid; gap: 18px; }
-    .comsource-report section {
-      position: relative;
-      overflow: hidden;
-      margin: 0;
-      border: 1px solid #d8e1ea;
-      border-radius: 12px;
-      background: #fff;
-      box-shadow: 0 10px 28px rgba(16, 22, 51, .07);
-    }
-    .comsource-report section::before {
-      right: -45px;
-      bottom: -90px;
-      left: auto;
-      top: auto;
-      width: 280px;
-      height: 280px;
-      border: 0;
-      border-radius: 0;
-      background: var(--watermark-image) center / contain no-repeat;
-      opacity: .42;
-    }
-    .comsource-report section > h2 {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin: 0;
-      padding: 16px 20px;
-      border-bottom: 1px solid #d8e1ea;
-      background: linear-gradient(90deg, #f5f8fb, #fff);
-      color: #2e1d67;
-      font-size: 20px;
-    }
-    .comsource-report section > h2::before { content: \"\"; width: 5px; height: 27px; border-radius: 4px; background: linear-gradient(#2e1d67, #0096d6); }
-    .comsource-report section > :not(h2) { position: relative; z-index: 1; }
-    .comsource-report .summary-grid { padding: 20px; }
-    .comsource-report .metric { background: #fff; border-color: #d8e1ea; border-top: 4px solid #147cc1; box-shadow: none; }
-    .comsource-report .metric strong { color: #101633; }
-    .comsource-report .metric span, .comsource-report .meta { color: #667085; }
-    .comsource-report .rds-executive {
-      padding: 32px;
-      background: linear-gradient(90deg, rgba(255, 255, 255, .98), rgba(255, 255, 255, .92) 68%, rgba(255, 255, 255, .78)), var(--executive-image) center / cover no-repeat;
-      box-shadow: 0 14px 36px rgba(16, 22, 51, .09);
-    }
-    .comsource-report .rds-executive::before { opacity: .13; }
-    .comsource-report .rds-executive__heading > span, .comsource-report .rds-chapter__copy > span { color: #0096d6; }
-    .comsource-report .rds-executive__heading h2 { color: #101633; }
-    .comsource-report .rds-executive__heading p { color: #667085; }
-    .comsource-report .rds-metric-group > header span { color: #2e1d67; }
-    .comsource-report .rds-metric-group > header p { color: #667085; }
-    .comsource-report .rds-metric { border: 1px solid #d8e1ea; border-top: 4px solid #147cc1; background: #fff; box-shadow: 0 8px 20px rgba(16, 22, 51, .06); }
-    .comsource-report .rds-metric__icon { color: #147cc1; border: 1px solid #b9dff0; background: #eef9fd; }
-    .comsource-report .rds-metric__state { color: #536679; border: 1px solid #d8e1ea; background: #f5f8fb; }
-    .comsource-report .rds-metric strong, .comsource-report .rds-metric h4 { color: #101633; }
-    .comsource-report .rds-metric p { color: #667085; }
-    .comsource-report .rds-metric--critical { border-top-color: #b42318; }
-    .comsource-report .rds-metric--critical .rds-metric__icon { color: #b42318; border-color: #f1b7b2; background: #fff4f3; }
-    .comsource-report .rds-metric--warning { border-top-color: #b54708; }
-    .comsource-report .rds-metric--warning .rds-metric__icon { color: #b54708; border-color: #f2c59e; background: #fff8f0; }
-    .comsource-report .rds-metric--info .rds-metric__icon { color: #2e1d67; border-color: #cfc6ec; background: #f7f5fc; }
-    .comsource-report .rds-chapter { margin: 0; border: 1px solid #d8e1ea; background-color: #101633; box-shadow: 0 10px 28px rgba(16, 22, 51, .10); }
-    .comsource-report .rds-chapter::before { background: linear-gradient(90deg, rgba(8, 13, 34, .98), rgba(16, 22, 51, .90) 52%, rgba(46, 29, 103, .38)); }
-    .comsource-report .rds-chapter__copy h2 { color: #fff; }
-    .comsource-report .rds-chapter__copy p { color: #d5e2ee; }
-    .comsource-report .rds-chapter__sigil { stroke: rgba(98, 212, 255, .58); }
-    .comsource-report .rds-recommendation { border: 1px solid #c8d9e6; background-image: linear-gradient(90deg, rgba(245, 248, 251, .98), rgba(255, 255, 255, .93)), var(--recommendation-image); }
-    .comsource-report .rds-recommendation::after { background: linear-gradient(90deg, rgba(255, 255, 255, .98), rgba(255, 255, 255, .88)); }
-    .comsource-report .rds-recommendation__icon { color: #fff; background: #2e1d67; }
-    .comsource-report .finding { background: #fff; border-color: #d8e1ea; }
-    .comsource-report th { background: #101633; color: #fff; }
-    .comsource-report th, .comsource-report td { border-bottom-color: #d8e1ea; }
-    .comsource-report tbody tr:nth-child(even) { background: #f5f8fb; }
-    .comsource-report .template-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 18px; padding: 16px 20px; border-radius: 10px; background: #080d22; color: #fff; }
-    .comsource-report .footer-logo { padding: 7px 10px; border-radius: 7px; background: #fff; }
-    .comsource-report .footer-logo img { display: block; width: 180px; height: auto; }
-    .comsource-report .template-footer small { color: #d5e2ee; }
-    @media (max-width: 700px) {
-      .comsource-report .report-shell { width: calc(100% - 18px); margin-top: 9px; }
-      .comsource-report .report-hero { min-height: 0; padding: 24px 20px 38px; }
-      .comsource-report .template-footer { align-items: flex-start; flex-direction: column; }
-    }
-    @media print {
-      .comsource-report, .comsource-report body { background: #fff; }
-      .comsource-report .report-shell { width: 100%; margin: 0; }
-      .comsource-report .report-hero { min-height: auto; border: 1px solid #aab4c1; background: #101633 !important; }
-      .comsource-report .report-hero h1, .comsource-report .report-hero p { color: #fff !important; }
-      .comsource-report section { break-inside: avoid; }
-      .comsource-report .template-footer { border: 1px solid #cbd3dc; background: #fff; color: #20283a; }
-      .comsource-report .template-footer small { color: #667085; }
     }"""
 
     def _header_metadata(self, report: AssessmentReport) -> str:
@@ -2156,7 +2122,12 @@ class HtmlReportBuilder:
         )
 
     def _registration_summary_rows(self, report: AssessmentReport) -> str:
-        if not report.facts.registrations:
+        registrations = [
+            registration
+            for registration in report.facts.registrations
+            if runtime_resource_category(registration) is None
+        ]
+        if not registrations:
             return '<tr><td colspan="5">No device registration facts collected.</td></tr>'
 
         counts: dict[str, Counter[str]] = {
@@ -2164,7 +2135,7 @@ class HtmlReportBuilder:
             "Gateways/endpoints": Counter(),
             "SIP trunks": Counter(),
         }
-        for registration in report.facts.registrations:
+        for registration in registrations:
             category = _registration_category(
                 name=registration.name,
                 model=registration.model,
@@ -2191,6 +2162,149 @@ class HtmlReportBuilder:
                 "</tr>"
             )
         return "\n".join(rows)
+
+    def _endpoint_runtime_coverage_section(self, report: AssessmentReport) -> str:
+        """Report configured endpoints that have no current/recent RIS observation."""
+
+        if not report.facts.devices:
+            return ""
+        reconciliation = build_inventory_runtime_reconciliation(
+            report.facts.devices, report.facts.registrations
+        )
+        without_runtime = reconciliation.registration_capable_or_unclassified
+        known_templates = reconciliation.known_non_runtime
+        configured_endpoints = len(report.facts.devices) - len(known_templates)
+        observed_endpoints = configured_endpoints - len(without_runtime)
+        model_rows = self._inventory_only_summary_rows(without_runtime, "model")
+        pool_rows = self._inventory_only_summary_rows(without_runtime, "device_pool")
+        location_rows = self._inventory_only_summary_rows(without_runtime, "location")
+        detail_rows = self._inventory_only_rows(without_runtime)
+        location_context = ""
+        if any(
+            (device.location or "").strip().casefold() == "hub_none" for device in without_runtime
+        ):
+            location_context = (
+                '<p class="meta"><strong>Location context:</strong> <code>Hub_None</code> is '
+                "the CUCM Location assigned to these devices. Reconciliation matches device "
+                "names, so that Location value did not cause the missing runtime observations.</p>"
+            )
+
+        return f"""
+    <section>
+      <h2>Configured Endpoint Runtime Coverage</h2>
+      <p class="meta">Name-based comparison of AXL configured endpoint inventory with the
+      current/recent RIS response. Absence from RIS means no runtime observation was returned;
+      it does not by itself prove that an endpoint is administratively unregistered or unhealthy.</p>
+      {location_context}
+      <table><tbody>
+        <tr><th>Configured endpoints</th><td>{configured_endpoints}</td></tr>
+        <tr><th>Endpoints observed in RIS</th><td>{observed_endpoints}</td></tr>
+        <tr><th>Configured endpoints without RIS observation</th><td>{len(without_runtime)}</td></tr>
+        <tr><th>Configuration templates excluded</th><td>{len(known_templates)}</td></tr>
+      </tbody></table>
+      <details class="report-data"><summary>Show configured endpoints without a runtime observation</summary>
+        <h3>By Model</h3>
+        <div class="table-scroll"><table><thead><tr><th>Model</th><th>Devices</th></tr></thead>
+        <tbody>{model_rows}</tbody></table></div>
+        <h3>By Device Pool</h3>
+        <div class="table-scroll"><table><thead><tr><th>Device Pool</th><th>Devices</th></tr></thead>
+        <tbody>{pool_rows}</tbody></table></div>
+        <h3>By Location</h3>
+        <div class="table-scroll"><table><thead><tr><th>Location</th><th>Devices</th></tr></thead>
+        <tbody>{location_rows}</tbody></table></div>
+        <h3>Endpoint Detail</h3>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Name</th><th>Model</th><th>Protocol</th><th>Device Pool</th><th>Location</th><th>Source</th></tr></thead>
+          <tbody>{detail_rows}</tbody>
+        </table></div>
+      </details>
+    </section>
+"""
+
+    def _call_manager_runtime_resources_section(self, report: AssessmentReport) -> str:
+        """Render non-endpoint CUCM resources from the supplemental all-class RIS query."""
+
+        resources = [
+            registration
+            for registration in report.facts.registrations
+            if runtime_resource_category(registration) is not None
+        ]
+        if not resources:
+            return ""
+        category_order = {
+            name: index
+            for index, name in enumerate(
+                (
+                    "SIP Trunks",
+                    "H.323 Gateways",
+                    "Gateways",
+                    "Route Lists",
+                    "CTI Route Points",
+                    "Annunciators",
+                    "Conference Bridges",
+                    "Transcoders",
+                    "Media Termination Points",
+                    "Music On Hold",
+                    "IVR Media Resources",
+                    "Other Media Resources",
+                )
+            )
+        }
+        grouped: dict[str, Counter[str]] = {}
+        for registration in resources:
+            category = runtime_resource_category(registration)
+            assert category is not None
+            status = registration.status.strip().casefold()
+            bucket = (
+                "registered"
+                if status == "registered"
+                else ("unregistered" if status == "unregistered" else "other")
+            )
+            grouped.setdefault(category, Counter())[bucket] += 1
+        summary_rows = "".join(
+            "<tr>"
+            f"<td>{escape(category)}</td><td>{counts['registered']}</td>"
+            f"<td>{counts['unregistered']}</td><td>{counts['other']}</td>"
+            f"<td>{sum(counts.values())}</td></tr>"
+            for category, counts in sorted(
+                grouped.items(), key=lambda item: (category_order.get(item[0], 99), item[0])
+            )
+        )
+        detail_rows = "".join(
+            "<tr>"
+            f"<td>{escape(runtime_resource_category(registration) or 'Other')}</td>"
+            f"<td>{escape(self._identifier(registration.name, 'Resource'))}</td>"
+            f"<td>{escape(display_text(registration.status))}</td>"
+            f"<td>{escape(self._identifier(registration.registered_node, 'Node'))}</td>"
+            f"<td>{escape(display_text(registration.ip_address))}</td>"
+            f"<td>{escape(display_text(registration.runtime_model_code or registration.model))}</td>"
+            f"<td>{escape(display_text(registration.device_class))}</td>"
+            f"<td>{escape(display_text(registration.protocol))}</td>"
+            "</tr>"
+            for registration in sorted(
+                resources,
+                key=lambda item: (
+                    category_order.get(runtime_resource_category(item) or "", 99),
+                    self._node_reference_sort_key(report, item.registered_node),
+                    _natural_sort_key(item.name),
+                ),
+            )
+        )
+        return f"""
+    <section>
+      <h2>Call Manager Runtime Resources</h2>
+      <p class="meta">Source: supplemental RIS all-device-class runtime discovery. Trunks,
+      gateways, route lists, CTI route points, and media resources are classified using the
+      returned CUCM device class and model code rather than treated as unmatched phones.</p>
+      <table><thead><tr><th>Resource Type</th><th>Registered</th><th>Unregistered</th><th>Other / Unknown</th><th>Total</th></tr></thead>
+      <tbody>{summary_rows}</tbody></table>
+      <details class="report-data"><summary>Show Call Manager runtime resource details</summary>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Resource Type</th><th>Name</th><th>Status</th><th>Node</th><th>Address</th><th>Model Code</th><th>Device Class</th><th>Protocol</th></tr></thead>
+        <tbody>{detail_rows}</tbody>
+      </table></div></details>
+    </section>
+"""
 
     def _firmware_summary_rows(self, report: AssessmentReport) -> str:
         loads = Counter(
@@ -2681,9 +2795,14 @@ class HtmlReportBuilder:
         )
 
     def _configuration_summary_rows(self, report: AssessmentReport) -> str:
-        if not report.facts.configuration_objects:
+        configuration = [
+            item
+            for item in report.facts.configuration_objects
+            if not _is_cuc_configuration_object(item)
+        ]
+        if not configuration:
             return '<tr><td colspan="2">No normalized configuration objects collected.</td></tr>'
-        counts = Counter(item.object_type for item in report.facts.configuration_objects)
+        counts = Counter(item.object_type for item in configuration)
         return "\n".join(
             f"<tr><td>{escape(object_type)}</td><td>{count}</td></tr>"
             for object_type, count in sorted(counts.items())
@@ -2772,7 +2891,12 @@ class HtmlReportBuilder:
         )
 
     def _configuration_rows(self, report: AssessmentReport) -> str:
-        if not report.facts.configuration_objects:
+        configuration = [
+            item
+            for item in report.facts.configuration_objects
+            if not _is_cuc_configuration_object(item)
+        ]
+        if not configuration:
             return '<tr><td colspan="4">No normalized configuration objects collected.</td></tr>'
         return "\n".join(
             "<tr>"
@@ -2782,7 +2906,7 @@ class HtmlReportBuilder:
             f"<td>{escape(display_source(item.source))}</td>"
             "</tr>"
             for item in sorted(
-                report.facts.configuration_objects,
+                configuration,
                 key=lambda fact: (fact.object_type, fact.name),
             )
         )
@@ -3024,60 +3148,39 @@ class HtmlReportBuilder:
                 ("Runtime registration records", reconciliation.runtime_count),
                 ("Matched devices", len(reconciliation.matched_names)),
                 (
-                    "Inventory-only registration-capable/unclassified",
+                    "Configured endpoints without RIS observation (reported in analysis)",
                     len(reconciliation.registration_capable_or_unclassified),
                 ),
                 ("Known non-runtime inventory objects", len(reconciliation.known_non_runtime)),
-                ("Runtime-only devices", len(reconciliation.runtime_only)),
+                (
+                    "CUCM runtime resources (reported in analysis)",
+                    len(reconciliation.runtime_only_resources),
+                ),
+                ("Unmatched runtime endpoint records", len(reconciliation.runtime_only_endpoints)),
             )
         )
-        inventory_only_rows = self._inventory_only_rows(
-            reconciliation.registration_capable_or_unclassified
-        )
-        inventory_model_rows = self._inventory_only_summary_rows(
-            reconciliation.registration_capable_or_unclassified, "model"
-        )
-        inventory_pool_rows = self._inventory_only_summary_rows(
-            reconciliation.registration_capable_or_unclassified, "device_pool"
-        )
         non_runtime_rows = self._inventory_only_rows(reconciliation.known_non_runtime)
-        runtime_only_rows = self._runtime_only_rows(report, reconciliation.runtime_only)
+        runtime_only_rows = self._runtime_only_rows(report, reconciliation.runtime_only_endpoints)
 
         return f"""
     <section>
       <h2>Inventory / Runtime Reconciliation</h2>
       <p class="meta">Informational name-based comparison between configured inventory facts
-      and runtime registration facts. Inventory-only objects are conservatively separated when
-      their model is known not to register. Remaining devices are not automatically unregistered or unhealthy.
-      Differences are not health findings.</p>
+      and runtime registration facts. Endpoint coverage and recognized CUCM runtime resources
+      are reported in the Call Manager analysis above; this appendix retains only unmatched
+      runtime endpoint records and known non-runtime configuration objects. Differences are not
+      health findings.</p>
       <table>
         <tbody>
           {summary_rows}
         </tbody>
       </table>
-      <h3>Runtime-only Devices</h3>
-      <details class="report-data"><summary>Show runtime-only devices</summary>
+      <h3>Unmatched Runtime Endpoint Records</h3>
+      <details class="report-data"><summary>Show unmatched runtime endpoint records</summary>
       <table>
         <thead><tr><th>Name</th><th>Status</th><th>Registered Node</th><th>Model</th><th>Protocol</th><th>Source</th></tr></thead>
         <tbody>
           {runtime_only_rows}
-        </tbody>
-      </table>
-      </details>
-      <h3>Inventory-only Registration-capable or Unclassified Devices</h3>
-      <details class="report-data"><summary>Show inventory-only device summaries and details</summary>
-      <div class="table-scroll"><table>
-        <thead><tr><th>Model</th><th>Devices</th></tr></thead>
-        <tbody>{inventory_model_rows}</tbody>
-      </table></div>
-      <div class="table-scroll"><table>
-        <thead><tr><th>Device Pool</th><th>Devices</th></tr></thead>
-        <tbody>{inventory_pool_rows}</tbody>
-      </table></div>
-      <table>
-        <thead><tr><th>Name</th><th>Model</th><th>Protocol</th><th>Device Pool</th><th>Location</th><th>Source</th></tr></thead>
-        <tbody>
-          {inventory_only_rows}
         </tbody>
       </table>
       </details>
@@ -3179,7 +3282,7 @@ class HtmlReportBuilder:
 """
 
     def _evidence_list(self, finding: HealthFinding) -> str:
-        if not finding.evidence:
+        if self.customer_safe or not finding.evidence:
             return ""
 
         items = []
@@ -3254,6 +3357,10 @@ class HtmlReportBuilder:
             technology_rank = min(node_keys)[0] if node_keys else _technology_sort_key("")
             return (technology_rank, _natural_sort_key(name))
         return (_technology_sort_key(technology), _natural_sort_key(name))
+
+
+def _is_cuc_configuration_object(item: ConfigurationObjectFact) -> bool:
+    return item.source.strip().upper().startswith("CUC.") or item.object_type.startswith("Cuc")
 
 
 def _protocol_bucket(protocol: str | None) -> str:

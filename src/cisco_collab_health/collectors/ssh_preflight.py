@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import Protocol, TypeVar
 
 from cisco_collab_health.models.runtime import CollectionContext
+from cisco_collab_health.transport.ssh import is_ssh_authentication_failure
 
 
 T = TypeVar("T")
@@ -41,16 +42,53 @@ def preflight_ssh_nodes(
             with session_factory(node_context):
                 pass
         except Exception as exc:
-            warnings.append(f"SSH preflight failed on {node}: {exc}")
-            _progress(context, f"SSH preflight failed: {node}")
-        else:
-            # The worker pool must never prompt or enroll a key. It uses the
-            # key just validated and saved by this serial preflight instead.
-            ready.append(
-                replace(node_context, accept_new_host_key=False, host_key_approval=None)
+            retried_context = _retry_authentication(
+                context, node_context, node, exc, session_factory
             )
+            if retried_context is None:
+                warnings.append(f"SSH preflight failed on {node}: {exc}")
+                _progress(context, f"SSH preflight failed: {node}")
+                continue
+            node_context = retried_context
+            _progress(context, f"SSH preflight complete after password retry: {node}")
+        else:
             _progress(context, f"SSH preflight complete: {node}")
+        # The worker pool must never prompt or enroll a key. It uses the
+        # key just validated and saved by this serial preflight instead.
+        ready.append(
+            replace(
+                node_context,
+                accept_new_host_key=False,
+                host_key_approval=None,
+                ssh_password_retry=None,
+            )
+        )
     return ready, warnings
+
+
+def _retry_authentication(
+    context: CollectionContext,
+    node_context: CollectionContext,
+    node: str,
+    exc: Exception,
+    session_factory: SessionFactory,
+) -> CollectionContext | None:
+    if context.ssh_password_retry is None or not is_ssh_authentication_failure(exc):
+        return None
+    _progress(context, f"SSH authentication failed on {node}; requesting a node-specific password")
+    password = context.ssh_password_retry(node, str(exc))
+    if password is None:
+        _progress(context, f"SSH password retry skipped: {node}")
+        return None
+    retry_context = replace(node_context, os_password=password)
+    _progress(context, f"SSH preflight retry: {node} (authenticate, open shell)")
+    try:
+        with session_factory(retry_context):
+            pass
+    except Exception:
+        _progress(context, f"SSH password retry failed: {node}")
+        return None
+    return retry_context
 
 
 def collect_preflighted_nodes(
