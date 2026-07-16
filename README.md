@@ -36,6 +36,7 @@ after the scripting engine matures, but it is not a current concern.
 - [Security and data handling](docs/SECURITY_AND_DATA_HANDLING.md)
 - [Transport trust](docs/TRANSPORT_TRUST.md)
 - [Collector safety catalog](docs/COLLECTOR_SAFETY_CATALOG.md)
+- [Cisco UC lifecycle catalog](docs/CISCO_LIFECYCLE_CATALOG.md)
 - [HTML report templates](docs/REPORT_TEMPLATES.md)
 - [Technology modularization plan](docs/TECHNOLOGY_MODULARIZATION_PLAN.md)
 

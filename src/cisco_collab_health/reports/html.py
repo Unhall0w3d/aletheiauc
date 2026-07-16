@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from cisco_collab_health.lifecycle import lifecycle_for, lifecycle_status, technology_for_product
 from cisco_collab_health.models.assessment import AssessmentReport
 from cisco_collab_health.models.facts import (
     CertificateFact,
@@ -379,6 +380,7 @@ class HtmlReportBuilder:
         cuc_platform_section = self._cuc_platform_section(report)
         cuc_informix_section = self._cuc_informix_section(report)
         cluster_section = self._cluster_section(report)
+        lifecycle_section = self._software_lifecycle_section(report)
         node_rows = self._node_rows(report)
         device_rows = self._device_rows(report)
         device_model_rows = self._device_model_summary_rows(report)
@@ -897,6 +899,7 @@ class HtmlReportBuilder:
     {coverage_section}
     {analysis_cuc_platform_section}
     {cluster_section}
+    {lifecycle_section}
     {software_consistency_section}
     <section>
       <h2>Discovered Nodes</h2>
@@ -1940,6 +1943,64 @@ class HtmlReportBuilder:
         <thead><tr><th>Technology</th><th>Cluster Anchor</th><th>Product</th><th>Version</th></tr></thead>
         <tbody>{rows}</tbody>
       </table>
+    </section>
+"""
+
+    def _software_lifecycle_section(self, report: AssessmentReport) -> str:
+        """Show a source-linked lifecycle status only for curated exact version matches."""
+
+        # Keep the self-contained synthetic example fully offline; live reports retain
+        # the Cisco notice links needed for upgrade planning.
+        if _is_sample_report(report):
+            return ""
+        clusters = [*report.facts.clusters]
+        if report.facts.cluster is not None and report.facts.cluster not in clusters:
+            clusters.append(report.facts.cluster)
+        if not clusters:
+            return ""
+
+        rows = []
+        for cluster in sorted(
+            clusters,
+            key=lambda item: (
+                _technology_sort_key(technology_for_product(item.product) or ""),
+                _natural_sort_key(item.name),
+            ),
+        ):
+            technology = technology_for_product(cluster.product)
+            record = lifecycle_for(technology or "", cluster.version) if technology else None
+            if record is None:
+                lifecycle = "Not cataloged — no lifecycle conclusion"
+                dates = ("—", "—", "—")
+                source = "No exact curated Cisco lifecycle record"
+            else:
+                status = lifecycle_status(record)
+                lifecycle = f"{status.label}: {status.detail}"
+                dates = (
+                    record.end_of_sale.isoformat(),
+                    record.end_of_maintenance.isoformat(),
+                    record.last_support.isoformat(),
+                )
+                source = (
+                    f'<a href="{escape(record.source_url, quote=True)}">Cisco lifecycle notice</a>'
+                )
+            rows.append(
+                "<tr>"
+                f"<td>{escape(display_text(technology, empty='Unknown').upper())}</td>"
+                f"<td>{escape(self._identifier(cluster.name, 'Cluster'))}</td>"
+                f"<td>{escape(cluster.version)}</td>"
+                f"<td>{escape(dates[0])}</td><td>{escape(dates[1])}</td><td>{escape(dates[2])}</td>"
+                f"<td>{escape(lifecycle)}</td><td>{source}</td>"
+                "</tr>"
+            )
+        return f"""
+    <section>
+      <h2>Software Lifecycle</h2>
+      <p class="meta">Lifecycle dates are shown only when the collected product and release exactly match the curated, source-linked Cisco catalog. A non-cataloged release is intentionally not treated as supported or unsupported.</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Technology</th><th>Cluster</th><th>Collected version</th><th>End of sale</th><th>End of maintenance</th><th>Last support</th><th>Assessment status</th><th>Source</th></tr></thead>
+        <tbody>{''.join(rows)}</tbody>
+      </table></div>
     </section>
 """
 

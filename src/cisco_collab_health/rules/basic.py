@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 
+from cisco_collab_health.lifecycle import lifecycle_for, lifecycle_status, technology_for_product
 from cisco_collab_health.models.evidence import EvidenceRef
 from cisco_collab_health.models.facts import (
     AssessmentFacts,
@@ -882,6 +883,54 @@ def _software_options(check: PlatformCheckFact) -> set[str]:
         for value in check.details.get("installed_software_options", "").split("|")
         if value
     }
+
+
+class SoftwareLifecycleRule:
+    """Flag known Cisco UC releases that need lifecycle planning or action."""
+
+    rule_id = "core.software_lifecycle"
+
+    def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
+        clusters = [*facts.clusters]
+        if facts.cluster is not None and facts.cluster not in clusters:
+            clusters.append(facts.cluster)
+
+        findings: list[HealthFinding] = []
+        for cluster in sorted(clusters, key=lambda item: (item.product.casefold(), item.name.casefold())):
+            technology = technology_for_product(cluster.product)
+            record = lifecycle_for(technology or "", cluster.version) if technology else None
+            if record is None:
+                continue
+            status = lifecycle_status(record)
+            if not status.attention_needed:
+                continue
+            findings.append(
+                HealthFinding(
+                    rule_id=f"{self.rule_id}.{technology}.{record.release}",
+                    title=f"{cluster.product} {cluster.version}: {status.label.lower()}",
+                    severity=FindingSeverity.WARNING,
+                    recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+                    facts=[
+                        f"Cluster anchor: {cluster.name}",
+                        f"Cisco end of sale: {record.end_of_sale.isoformat()}",
+                        f"Cisco end of software maintenance: {record.end_of_maintenance.isoformat()}",
+                        f"Cisco last date of support: {record.last_support.isoformat()}",
+                    ],
+                    reasoning=(
+                        "The collected version matches a curated Cisco lifecycle notice. "
+                        f"{status.detail}"
+                    ),
+                    recommendation=(
+                        "Confirm the installed release and entitlement with Cisco, then plan the "
+                        "appropriate supported upgrade path. Official lifecycle notice: "
+                        f"{record.source_url}"
+                    ),
+                    evidence=[
+                        EvidenceRef(source="normalized_facts", operation="cluster_identity", confidence="high")
+                    ],
+                )
+            )
+        return findings
 
 
 class CucPlatformHealthRule:

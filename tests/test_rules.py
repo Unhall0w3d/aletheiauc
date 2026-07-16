@@ -7,6 +7,7 @@ import unittest
 from cisco_collab_health.models.facts import (
     AssessmentFacts,
     CertificateFact,
+    ClusterIdentity,
     CollaborationNode,
     ConfigurationObjectFact,
     CollectorIssueFact,
@@ -36,6 +37,7 @@ from cisco_collab_health.rules.basic import (
     ServiceSummaryRule,
     ServiceRuntimeRule,
     SipTrunkRuntimeRule,
+    SoftwareLifecycleRule,
     SoftwareConsistencyRule,
 )
 
@@ -140,6 +142,27 @@ class SoftwareConsistencyRuleTests(unittest.TestCase):
         self.assertEqual(len(findings), 2)
         self.assertIn("15.0.1.12900-234", findings[0].facts[1])
         self.assertIn("missing patch-a.cop", findings[1].facts[1])
+
+
+class SoftwareLifecycleRuleTests(unittest.TestCase):
+    def test_known_unsupported_release_creates_source_linked_finding(self) -> None:
+        facts = AssessmentFacts(
+            cluster=ClusterIdentity("pub", "Cisco Unified Communications Manager", "12.5.1.11900-146")
+        )
+
+        findings = SoftwareLifecycleRule().evaluate(facts)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
+        self.assertIn("support ended", findings[0].title)
+        self.assertIn("cisco.com", findings[0].recommendation or "")
+
+    def test_unknown_release_is_not_reported_as_a_lifecycle_finding(self) -> None:
+        facts = AssessmentFacts(
+            cluster=ClusterIdentity("pub", "Cisco Unified Communications Manager", "15.0.1.12900-43")
+        )
+
+        self.assertEqual(SoftwareLifecycleRule().evaluate(facts), [])
 
 
 class CucPlatformRulesTests(unittest.TestCase):

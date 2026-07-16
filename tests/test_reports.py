@@ -84,6 +84,23 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("Cluster Software Consistency", payload)
         self.assertIn("missing: patch-a.cop", payload)
 
+    def test_html_report_renders_source_linked_known_lifecycle(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                cluster=ClusterIdentity(
+                    "pub", "Cisco Unified Communications Manager", "12.5.1.11900-146"
+                )
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        payload = HtmlReportBuilder().build(report)
+
+        self.assertIn("Software Lifecycle", payload)
+        self.assertIn("Cisco support ended", payload)
+        self.assertIn("v-12-5-on-premises-calling-applications-eol.html", payload)
+
     def setUp(self) -> None:
         self.report = AssessmentEngine(
             collectors=[SampleCollector()],
