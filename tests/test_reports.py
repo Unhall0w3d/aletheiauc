@@ -55,6 +55,35 @@ from cisco_collab_health.rules.basic import ClusterIdentityRule, NodeReachabilit
 
 
 class ReportBuilderTests(unittest.TestCase):
+    def test_html_report_renders_cluster_software_consistency(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                nodes=[
+                    CollaborationNode("pub", "10.0.0.1", "publisher", target_id="cluster-a"),
+                    CollaborationNode("sub", "10.0.0.2", "subscriber", target_id="cluster-a"),
+                ],
+                platform_checks=[
+                    PlatformCheckFact(
+                        "pub", "show version active", "collected",
+                        {"active_version": "15.0.1.12900-43", "installed_software_options": "patch-a.cop"},
+                        "CUCM.UCOS.CLI", target_id="cluster-a",
+                    ),
+                    PlatformCheckFact(
+                        "sub", "show version active", "collected",
+                        {"active_version": "15.0.1.12900-234", "installed_software_options": ""},
+                        "CUCM.UCOS.CLI", target_id="cluster-a",
+                    ),
+                ],
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        payload = HtmlReportBuilder().build(report)
+
+        self.assertIn("Cluster Software Consistency", payload)
+        self.assertIn("missing: patch-a.cop", payload)
+
     def setUp(self) -> None:
         self.report = AssessmentEngine(
             collectors=[SampleCollector()],

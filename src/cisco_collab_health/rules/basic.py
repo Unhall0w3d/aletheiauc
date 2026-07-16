@@ -10,6 +10,7 @@ from cisco_collab_health.models.facts import (
     AssessmentFacts,
     CertificateFact,
     DeviceRegistrationFact,
+    PlatformCheckFact,
 )
 from cisco_collab_health.models.findings import (
     FindingSeverity,
@@ -770,6 +771,119 @@ class PlatformCheckSummaryRule:
         ]
 
 
+class SoftwareConsistencyRule:
+    """Compare UCOS active versions and installed software options across cluster nodes."""
+
+    rule_id = "platform.software_consistency"
+
+    def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
+        checks = [
+            item
+            for item in facts.platform_checks
+            if item.check_name == "show version active"
+            and item.source in {"CUCM.UCOS.CLI", "CUC.UCOS.CLI"}
+            and item.status == "collected"
+        ]
+        findings: list[HealthFinding] = []
+        for group_key in sorted({(item.target_id or item.source, item.source) for item in checks}):
+            target_id, source = group_key
+            group = [
+                item for item in checks if (item.target_id or item.source, item.source) == group_key
+            ]
+            if len(group) < 2:
+                continue
+            publisher_keys = {
+                value.strip().lower()
+                for node in facts.nodes
+                if (node.target_id or source) == target_id and node.role.lower() == "publisher"
+                for value in (node.name, node.address)
+                if value.strip()
+            }
+            publisher = next(
+                (item for item in group if item.node.strip().lower() in publisher_keys), group[0]
+            )
+            expected_version = publisher.details.get("active_version", "unknown")
+            mismatched_versions = [
+                item
+                for item in group
+                if expected_version != "unknown"
+                and item.details.get("active_version", "unknown") != expected_version
+            ]
+            if mismatched_versions:
+                findings.append(
+                    HealthFinding(
+                        rule_id=f"{self.rule_id}.version_mismatch.{target_id}",
+                        title="Cluster nodes are running different active software versions",
+                        severity=FindingSeverity.WARNING,
+                        recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+                        facts=[
+                            f"Publisher baseline ({publisher.node}): {expected_version}",
+                            *[
+                                f"{item.node}: {item.details.get('active_version', 'unknown')}"
+                                for item in sorted(mismatched_versions, key=lambda item: item.node.lower())
+                            ],
+                        ],
+                        reasoning=(
+                            "Cluster nodes should normally run the same active application version. "
+                            "A mismatch can indicate an incomplete upgrade, delayed switch version, or "
+                            "a node requiring engineering review."
+                        ),
+                        recommendation=(
+                            "Validate the cluster upgrade state and maintenance history before making "
+                            "any version or service changes."
+                        ),
+                        evidence=[
+                            EvidenceRef(source=source, operation="show_version_active", confidence="high")
+                        ],
+                    )
+                )
+            publisher_options = _software_options(publisher)
+            option_differences = []
+            for item in group:
+                if item is publisher:
+                    continue
+                options = _software_options(item)
+                missing = sorted(publisher_options - options)
+                extra = sorted(options - publisher_options)
+                if missing or extra:
+                    description = []
+                    if missing:
+                        description.append("missing " + ", ".join(missing))
+                    if extra:
+                        description.append("additional " + ", ".join(extra))
+                    option_differences.append(f"{item.node}: " + "; ".join(description))
+            if option_differences:
+                findings.append(
+                    HealthFinding(
+                        rule_id=f"{self.rule_id}.software_options.{target_id}",
+                        title="Installed software options differ across cluster nodes",
+                        severity=FindingSeverity.WARNING,
+                        recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+                        facts=[f"Publisher baseline: {publisher.node}", *option_differences],
+                        reasoning=(
+                            "Installed software options reported by UCOS are not consistent across "
+                            "collected nodes. This can leave nodes at different patch or COP levels."
+                        ),
+                        recommendation=(
+                            "Confirm each listed option against the approved cluster maintenance plan "
+                            "before installing, removing, or switching software."
+                        ),
+                        evidence=[
+                            EvidenceRef(source=source, operation="show_version_active", confidence="high")
+                        ],
+                    )
+                )
+        return findings
+
+
+def _software_options(check: PlatformCheckFact) -> set[str]:
+    return {
+        value
+        for value in check.details.get("installed_software_options", "").split("|")
+        if value
+    }
+
+
 class CucPlatformHealthRule:
     """Conservative findings from normalized Unity Connection UCOS summaries."""
 
@@ -852,31 +966,34 @@ class CucmPlatformHealthRule:
     def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
         checks = [check for check in facts.platform_checks if check.source == "CUCM.UCOS.CLI"]
         findings: list[HealthFinding] = []
-        critical_disk = [
-            check for check in checks
-            if check.check_name == "show status"
-            and check.details.get("max_disk_usage_percent", "").isdigit()
-            and int(check.details.get("max_disk_usage_percent", "0")) >= 95
-        ]
-        warning_disk = [
-            check for check in checks
-            if check.check_name == "show status"
-            and check.details.get("max_disk_usage_percent", "").isdigit()
-            and 90 <= int(check.details.get("max_disk_usage_percent", "0")) < 95
-        ]
-        if critical_disk or warning_disk:
-            affected = critical_disk or warning_disk
+        common_disk = _partition_usage_above(checks, "common_partition_usage_percent", 90)
+        if common_disk:
             findings.append(
                 _cucm_cli_finding(
-                    "disk_usage",
-                    FindingSeverity.CRITICAL if critical_disk else FindingSeverity.WARNING,
-                    "CUCM disk usage is critically high" if critical_disk else "CUCM disk usage needs attention",
+                    "common_partition_usage",
+                    FindingSeverity.CRITICAL if any(value >= 95 for _, value in common_disk) else FindingSeverity.WARNING,
+                    "CUCM common/logging partition utilization is critically high",
                     [
-                        f"{check.node}: {check.details.get('max_disk_usage_percent')}% highest collected partition usage"
-                        for check in sorted(affected, key=lambda item: item.node)
+                        f"{check.node}: {value}% common/logging partition"
+                        for check, value in sorted(common_disk, key=lambda item: item[0].node)
                     ],
-                    "High disk utilization can prevent logging, database, upgrade, and core collaboration services from operating reliably.",
-                    "Have the UC administrator identify the affected partition, preserve any required evidence, and follow the Cisco-supported cleanup or capacity-expansion procedure.",
+                    "High common/logging-partition utilization can interrupt logging and leave insufficient upgrade staging space.",
+                    "Optional operator action: record the current RTMT LogPartition low/high watermarks, temporarily set low to 45% and high to 50%, allow one to two hours for oldest-first log cleanup, verify capacity, then restore the original values. This tool never changes watermarks. Follow Cisco's procedure: https://www.cisco.com/c/en/us/support/docs/unified-communications/unified-communications-manager-callmanager/221038-troubleshoot-full-common-partition-in-cu.html . If space remains insufficient, review Cisco's maintenance-window guidance for the Free Common Space COP.",
+                )
+            )
+        active_disk = _partition_usage_above(checks, "active_partition_usage_percent", 90)
+        if active_disk:
+            findings.append(
+                _cucm_cli_finding(
+                    "active_partition_usage",
+                    FindingSeverity.CRITICAL if any(value >= 95 for _, value in active_disk) else FindingSeverity.WARNING,
+                    "CUCM active partition utilization is critically high",
+                    [
+                        f"{check.node}: {value}% active partition"
+                        for check, value in sorted(active_disk, key=lambda item: item[0].node)
+                    ],
+                    "High active-partition utilization requires engineering review and is not addressed by common/logging watermark cleanup.",
+                    "Preserve required evidence and follow Cisco's partition troubleshooting procedure before deleting files or changing system storage. https://www.cisco.com/c/en/us/support/docs/unified-communications/unified-communications-manager-callmanager/221038-troubleshoot-full-common-partition-in-cu.html",
                 )
             )
         ntp_unsynced = [
@@ -990,6 +1107,18 @@ def _cucm_cli_finding(
             EvidenceRef(source="CUCM.UCOS.CLI", operation="platform_summary", confidence="high")
         ],
     )
+
+
+def _partition_usage_above(
+    checks: list[PlatformCheckFact], detail_name: str, threshold: int
+) -> list[tuple[PlatformCheckFact, int]]:
+    return [
+        (check, int(check.details[detail_name]))
+        for check in checks
+        if check.check_name == "show status"
+        and check.details.get(detail_name, "").isdigit()
+        and int(check.details[detail_name]) > threshold
+    ]
 
 
 class CucPlatformStatusRule:

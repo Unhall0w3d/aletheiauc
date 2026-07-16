@@ -133,6 +133,8 @@ class PlatformCheckFact:
     status: str
     details: dict[str, str]
     source: str
+    technology: str | None = None
+    target_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -506,6 +508,8 @@ def _merge_platform_check(
         status=_prefer(existing.status, incoming.status),
         details=details,
         source=_merge_sources(existing.source, incoming.source),
+        technology=_prefer(existing.technology, incoming.technology),
+        target_id=_prefer(existing.target_id, incoming.target_id),
     )
 
 
@@ -538,8 +542,12 @@ def _perf_counter_key(fact: PerfCounterFact) -> tuple[str, str, str, str, str]:
     )
 
 
-def _platform_check_key(fact: PlatformCheckFact) -> tuple[str, str]:
-    return (_normalize_node_key(fact.node), fact.check_name.strip().lower())
+def _platform_check_key(fact: PlatformCheckFact) -> tuple[str, str, str]:
+    return (
+        (fact.target_id or "").strip().lower(),
+        _normalize_node_key(fact.node),
+        fact.check_name.strip().lower(),
+    )
 
 
 def _configuration_object_key(fact: ConfigurationObjectFact) -> tuple[str, ...]:

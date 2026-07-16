@@ -136,6 +136,10 @@ class TargetPipelineCollector:
                     replace(node, technology=self.technology, target_id=self.target_id)
                     for node in result.facts.nodes
                 ],
+                platform_checks=[
+                    replace(check, technology=self.technology, target_id=self.target_id)
+                    for check in result.facts.platform_checks
+                ],
             )
             facts.merge(tagged_facts)
             warnings.extend(f"{collector.name}: {item}" for item in result.warnings)

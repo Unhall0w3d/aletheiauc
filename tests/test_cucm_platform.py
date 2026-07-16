@@ -38,6 +38,22 @@ class CucmPlatformSummaryTests(unittest.TestCase):
         self.assertEqual(replication["replication_rows"], "3")
         self.assertEqual(replication["replication_bad_rows"], "0")
 
+    def test_version_and_partition_summaries_are_normalized(self) -> None:
+        version = _summary(
+            "show version active",
+            "Active Master Version: 15.0.1.12900-234\n"
+            "Active Version Installed Software Options:\nsecurity_patch.cop\nfeature.cop\n",
+        )
+        disk = _summary(
+            "show status",
+            "Disk/active 100K 5K 95K (5%)\nDisk/logging 100K 8K 92K (92%)\n",
+        )
+
+        self.assertEqual(version["active_version"], "15.0.1.12900-234")
+        self.assertEqual(version["installed_software_options"], "security_patch.cop|feature.cop")
+        self.assertEqual(disk["active_partition_usage_percent"], "5")
+        self.assertEqual(disk["common_partition_usage_percent"], "92")
+
     def test_collection_reuses_preflighted_node_context_without_opening_a_second_preflight_shell(self) -> None:
         opened: list[str] = []
 

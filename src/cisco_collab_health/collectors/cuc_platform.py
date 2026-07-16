@@ -12,6 +12,7 @@ from cisco_collab_health.collectors.ssh_preflight import (
     collect_preflighted_nodes,
     preflight_ssh_nodes,
 )
+from cisco_collab_health.collectors.ucos_summary import disk_usage_summary, version_summary
 from cisco_collab_health.models.facts import (
     AssessmentFacts,
     ClusterIdentity,
@@ -241,7 +242,7 @@ class CucPlatformCollector:
                     if context.artifact_store is not None:
                         context.artifact_store.write_command_output(node, definition.command, result.output)
                     if definition.command == "show version active":
-                        version = _cuc_version(result.output)
+                        version = version_summary(result.output, active=True)["active_version"]
                     if definition.command == "utils service list":
                         facts.services.extend(_cuc_service_status(node, result.output))
                     facts.platform_checks.append(_cuc_check(node, definition, "collected", result.output, result.paged))
@@ -488,18 +489,14 @@ def _cuc_cli_summary(command: str, output: str) -> dict[str, str]:
             "duplicate_ip": duplicate.group(1).lower() if duplicate else "unknown",
         }
     if command == "show status":
-        disk_usage = [
-            int(match.group(1))
-            for match in re.finditer(r"(?m)^Disk/\S+.*?\((\d+)%\)", output)
-        ]
+        summary = disk_usage_summary(output)
         uptime = re.search(r"\bup\s+(\d+)\s+days?", output, re.IGNORECASE)
         uptime_days = int(uptime.group(1)) if uptime else None
-        return {
-            "max_disk_usage_percent": str(max(disk_usage)) if disk_usage else "unknown",
-            "disk_warning_count": str(sum(value >= 90 for value in disk_usage)),
-            "disk_critical_count": str(sum(value >= 95 for value in disk_usage)),
-            "uptime_days": str(uptime_days) if uptime_days is not None else "unknown",
-        }
+        return {**summary, "uptime_days": str(uptime_days) if uptime_days is not None else "unknown"}
+    if command == "show version active":
+        return version_summary(output, active=True)
+    if command == "show version inactive":
+        return version_summary(output, active=False)
     return {}
 
 

@@ -42,6 +42,7 @@ from cisco_collab_health.rules.basic import (
     CollectorHealthRule,
     NodeReachabilityRule,
     PlatformCheckSummaryRule,
+    SoftwareConsistencyRule,
 )
 from cisco_collab_health.rules.base import HealthRule
 from cisco_collab_health.status import StatusPrinter
@@ -538,6 +539,7 @@ def _assessment_rules(technologies: Iterable[str]) -> list[HealthRule]:
         NodeReachabilityRule(),
         CollectorHealthRule(),
         PlatformCheckSummaryRule(),
+        SoftwareConsistencyRule(),
     ]
     for plugin in load_plugins(technologies):
         rules.extend(plugin.rules())

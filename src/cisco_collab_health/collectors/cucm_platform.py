@@ -12,6 +12,7 @@ from cisco_collab_health.collectors.ssh_preflight import (
     collect_preflighted_nodes,
     preflight_ssh_nodes,
 )
+from cisco_collab_health.collectors.ucos_summary import disk_usage_summary, version_summary
 from cisco_collab_health.config import normalize_node_address
 from cisco_collab_health.models.facts import AssessmentFacts, PlatformCheckFact
 from cisco_collab_health.models.runtime import CollectionContext
@@ -160,6 +161,9 @@ def _summary(command: str, output: str) -> dict[str, str]:
     if command == "utils core active list":
         return {"core_files": "0" if "No core files found" in output else "present"}
     if command == "show status":
-        usage = [int(value) for value in re.findall(r"(?m)^Disk/\S+.*?\((\d+)%\)", output)]
-        return {"max_disk_usage_percent": str(max(usage)) if usage else "unknown"}
+        return disk_usage_summary(output)
+    if command == "show version active":
+        return version_summary(output, active=True)
+    if command == "show version inactive":
+        return version_summary(output, active=False)
     return {}

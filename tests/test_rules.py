@@ -36,6 +36,7 @@ from cisco_collab_health.rules.basic import (
     ServiceSummaryRule,
     ServiceRuntimeRule,
     SipTrunkRuntimeRule,
+    SoftwareConsistencyRule,
 )
 
 
@@ -111,6 +112,34 @@ class FirmwareDownloadRuleTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
         self.assertIn("File Not Found: 1", findings[0].facts)
         self.assertIn("Affected devices: SEP001", findings[0].facts)
+
+
+class SoftwareConsistencyRuleTests(unittest.TestCase):
+    def test_flags_version_and_software_option_differences_from_publisher(self) -> None:
+        facts = AssessmentFacts(
+            nodes=[
+                CollaborationNode("pub", "10.0.0.1", "publisher", target_id="cluster-a"),
+                CollaborationNode("sub", "10.0.0.2", "subscriber", target_id="cluster-a"),
+            ],
+            platform_checks=[
+                PlatformCheckFact(
+                    "pub", "show version active", "collected",
+                    {"active_version": "15.0.1.12900-43", "installed_software_options": "patch-a.cop"},
+                    "CUCM.UCOS.CLI", target_id="cluster-a",
+                ),
+                PlatformCheckFact(
+                    "sub", "show version active", "collected",
+                    {"active_version": "15.0.1.12900-234", "installed_software_options": "patch-b.cop"},
+                    "CUCM.UCOS.CLI", target_id="cluster-a",
+                ),
+            ],
+        )
+
+        findings = SoftwareConsistencyRule().evaluate(facts)
+
+        self.assertEqual(len(findings), 2)
+        self.assertIn("15.0.1.12900-234", findings[0].facts[1])
+        self.assertIn("missing patch-a.cop", findings[1].facts[1])
 
 
 class CucPlatformRulesTests(unittest.TestCase):
@@ -211,7 +240,7 @@ class CucPlatformRulesTests(unittest.TestCase):
                 platform_checks=[
                     PlatformCheckFact(
                         "cucm-sub", "show status", "collected",
-                        {"max_disk_usage_percent": "99"}, "CUCM.UCOS.CLI",
+                        {"common_partition_usage_percent": "99"}, "CUCM.UCOS.CLI",
                     )
                 ]
             )
@@ -219,7 +248,7 @@ class CucPlatformRulesTests(unittest.TestCase):
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].severity, FindingSeverity.CRITICAL)
-        self.assertIn("cucm-sub: 99%", findings[0].facts[0])
+        self.assertIn("cucm-sub: 99% common/logging", findings[0].facts[0])
 
 
 class CucInformixDialPlanRuleTests(unittest.TestCase):

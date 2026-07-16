@@ -435,6 +435,7 @@ class HtmlReportBuilder:
         service_deployment_rows = self._service_deployment_rows(report)
         configuration_rows = self._configuration_rows(report)
         platform_check_rows = self._platform_check_rows(report)
+        software_consistency_section = self._software_consistency_section(report)
         platform_checks_section = "" if self.customer_safe else f"""
     <section>
       <h2>Platform Checks</h2>
@@ -896,6 +897,7 @@ class HtmlReportBuilder:
     {coverage_section}
     {analysis_cuc_platform_section}
     {cluster_section}
+    {software_consistency_section}
     <section>
       <h2>Discovered Nodes</h2>
       {self._node_source_caption(report)}
@@ -1915,7 +1917,6 @@ class HtmlReportBuilder:
       <p>Cluster identity was not collected.</p>
     </section>
 """
-
         rows = "".join(
             "<tr>"
             f"<td>{escape(display_text(_technology_from_product(cluster.product)).upper())}</td>"
@@ -1939,6 +1940,78 @@ class HtmlReportBuilder:
         <thead><tr><th>Technology</th><th>Cluster Anchor</th><th>Product</th><th>Version</th></tr></thead>
         <tbody>{rows}</tbody>
       </table>
+    </section>
+"""
+
+    def _software_consistency_section(self, report: AssessmentReport) -> str:
+        """Render per-node active-version and software-option comparisons when collected."""
+
+        active_checks = [
+            item
+            for item in report.facts.platform_checks
+            if item.check_name == "show version active"
+            and item.source in {"CUCM.UCOS.CLI", "CUC.UCOS.CLI"}
+            and item.status == "collected"
+        ]
+        if not active_checks:
+            return ""
+        inactive_by_node = {
+            ((item.target_id or item.source), item.node.lower()): item
+            for item in report.facts.platform_checks
+            if item.check_name == "show version inactive"
+            and item.source in {"CUCM.UCOS.CLI", "CUC.UCOS.CLI"}
+        }
+        rows = []
+        for target_id, source in sorted({(item.target_id or item.source, item.source) for item in active_checks}):
+            checks = [
+                item
+                for item in active_checks
+                if (item.target_id or item.source, item.source) == (target_id, source)
+            ]
+            publisher_keys = {
+                value.strip().lower()
+                for node in report.facts.nodes
+                if (node.target_id or source) == target_id and node.role.lower() == "publisher"
+                for value in (node.name, node.address)
+                if value.strip()
+            }
+            publisher = next(
+                (item for item in checks if item.node.strip().lower() in publisher_keys), checks[0]
+            )
+            publisher_options = _split_software_options(publisher.details.get("installed_software_options"))
+            for item in sorted(checks, key=lambda entry: _natural_sort_key(entry.node)):
+                options = _split_software_options(item.details.get("installed_software_options"))
+                if item is publisher:
+                    comparison = "Publisher baseline"
+                else:
+                    missing = sorted(publisher_options - options)
+                    extra = sorted(options - publisher_options)
+                    differences = []
+                    if missing:
+                        differences.append("missing: " + ", ".join(missing))
+                    if extra:
+                        differences.append("additional: " + ", ".join(extra))
+                    comparison = "; ".join(differences) or "Matches publisher"
+                inactive = inactive_by_node.get((target_id, item.node.lower()))
+                rows.append(
+                    "<tr>"
+                    f"<td>{escape(_technology_from_platform_source(source))}</td>"
+                    f"<td>{escape(self._identifier(target_id, 'Assessment target'))}</td>"
+                    f"<td>{escape(self._identifier(item.node, 'Node'))}</td>"
+                    f"<td>{escape(item.details.get('active_version', 'Unknown'))}</td>"
+                    f"<td>{escape((inactive.details.get('inactive_version') if inactive else None) or 'Unknown')}</td>"
+                    f"<td>{escape(', '.join(sorted(options)) or 'None reported')}</td>"
+                    f"<td>{escape(comparison)}</td>"
+                    "</tr>"
+                )
+        return f"""
+    <section>
+      <h2>Cluster Software Consistency</h2>
+      <p class="meta">Source: per-node UCOS <code>show version active</code> and <code>show version inactive</code>. Installed software options are compared with the collected Publisher baseline.</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Technology</th><th>Assessment target</th><th>Node</th><th>Active version</th><th>Inactive version</th><th>Installed software options</th><th>Comparison</th></tr></thead>
+        <tbody>{''.join(rows)}</tbody>
+      </table></div>
     </section>
 """
 
@@ -3565,6 +3638,14 @@ def _technology_cluster_label(technology: str) -> str:
         "imp": "IM&P Cluster",
     }
     return labels.get(technology.strip().lower(), f"{technology.strip().upper()} Cluster")
+
+
+def _technology_from_platform_source(source: str) -> str:
+    return source.split(".", 1)[0].upper()
+
+
+def _split_software_options(value: str | None) -> set[str]:
+    return {item for item in (value or "").split("|") if item}
 
 
 def _technology_from_product(product: str) -> str | None:
