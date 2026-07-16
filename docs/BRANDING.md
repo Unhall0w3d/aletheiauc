@@ -51,7 +51,7 @@ Use the five theme words only when paired with grounded product meaning:
 AletheiaUC is currently CLI-first. Recommended CLI usage:
 
 - Use ASCII/ANSI text for the runtime banner by default.
-- Use graphical assets only in documentation, release pages, README content, and GitHub assets.
+- Use graphical assets only in documentation, release pages, and GitHub assets.
 - Keep color usage in terminal output functional: green for success, yellow for warning/auth issues, red for failed connectivity, cyan/blue for headings.
 - Do not require image-rendering terminal support.
 
@@ -65,13 +65,9 @@ Assess · Diagnose · Improve · Optimize
 
 ### GitHub / README
 
-Recommended README placement:
-
-```markdown
-<p align="center">
-  <img src="assets/brand/png/aletheiauc-readme-header.png" alt="AletheiaUC — Bringing UC Health to Light" width="100%">
-</p>
-```
+The repository README intentionally remains text-only. If a future release page
+needs a graphical header, use the dedicated social-preview or release assets
+rather than reintroducing an image into the README.
 
 Recommended social preview upload:
 

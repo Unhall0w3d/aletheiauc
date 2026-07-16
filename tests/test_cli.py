@@ -94,7 +94,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("AletheiaUC Main Menu", output.getvalue())
         self.assertIn("[INFO] Exiting AletheiaUC", output.getvalue())
 
-    def test_temp_menu_can_run_sample_assessment(self) -> None:
+    def test_developer_options_can_run_framework_smoke_test(self) -> None:
         output = io.StringIO()
         with (
             patch("cisco_collab_health.cli.StatusPrinter._should_color", return_value=False),
@@ -105,8 +105,54 @@ class CliTests(unittest.TestCase):
             result = cli.main([])
 
         self.assertEqual(result, 0)
-        self.assertIn("TEMP Test Options", output.getvalue())
+        self.assertIn("Developer Options", output.getvalue())
         run_assessment.assert_called_once()
+
+    def test_main_menu_displays_non_secret_settings_summary(self) -> None:
+        output = io.StringIO()
+        with (
+            patch("cisco_collab_health.cli.StatusPrinter._should_color", return_value=False),
+            patch("cisco_collab_health.cli.sys.stdout", output),
+            patch("builtins.input", return_value="q"),
+        ):
+            cli.main([])
+
+        self.assertIn("Current settings: template=aletheiauc", output.getvalue())
+        self.assertIn("allow self-signed TLS", output.getvalue())
+
+    def test_copying_an_assessment_profile_saves_a_new_profile(self) -> None:
+        original = menu.AssessmentProfile(
+            "Regional", (menu.AssessmentTarget("cucm-Regional", "cucm", "Regional"),)
+        )
+        copied_targets = (menu.AssessmentTarget("cuc-Voicemail", "cuc", "Voicemail"),)
+        assessments = {"Regional": original}
+        with (
+            patch("cisco_collab_health.menu.load_assessment_profiles", return_value=assessments),
+            patch("cisco_collab_health.menu._prompt_assessment_name", return_value="Regional + CUC"),
+            patch("cisco_collab_health.menu._edit_assessment_targets", return_value=copied_targets),
+            patch("cisco_collab_health.menu.save_assessment_profiles") as save_assessments,
+            patch("builtins.input", side_effect=["1", "c", "r"]),
+        ):
+            menu._manage_assessment_profiles(cli.StatusPrinter(stream=io.StringIO()))
+
+        self.assertEqual(assessments["Regional + CUC"].targets, copied_targets)
+        save_assessments.assert_called_once_with(assessments)
+
+    def test_editing_assessment_profile_keeps_current_members_on_blank_input(self) -> None:
+        current_targets = (
+            menu.AssessmentTarget("cucm-Regional", "cucm", "Regional"),
+        )
+        details = {"cucm": type("Profile", (), {"publisher_ip": "192.0.2.10"})()}
+        with (
+            patch("cisco_collab_health.menu.load_profile_names", return_value=["Regional"]),
+            patch("cisco_collab_health.menu.load_connection_profile_details", return_value=details),
+            patch("builtins.input", return_value=""),
+        ):
+            targets = menu._edit_assessment_targets(
+                current_targets, cli.StatusPrinter(stream=io.StringIO())
+            )
+
+        self.assertEqual(targets, current_targets)
 
     def test_menu_selects_multiple_cluster_profiles_for_one_assessment(self) -> None:
         output = io.StringIO()

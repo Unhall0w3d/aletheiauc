@@ -41,11 +41,12 @@ def run_menu(
     settings = argparse.Namespace(**vars(args))
     while True:
         print("\nAletheiaUC Main Menu\n====================")
+        print(_settings_summary(settings))
         print("1. Run standard assessment")
         print("2. Run diagnostic assessment (full evidence bundle)")
         print("3. Profile management")
         print("4. Settings")
-        print("5. Test/framework options")
+        print("5. Developer Options")
         print("Q. Quit\n")
         choice = input("Selection: ").strip().lower()
         if choice == "1":
@@ -150,13 +151,21 @@ def _manage_assessment_profiles(status: StatusPrinter) -> None:
         name = names[int(choice) - 1]
         assessment = assessments[name]
         _show_assessment_set(assessment)
-        action = input("E=Edit clusters, D=Delete, B=Back: ").strip().lower()
+        action = input("C=Copy and edit, E=Edit clusters, D=Delete, B=Back: ").strip().lower()
         if action == "e":
-            targets = _select_assessment_targets(status)
+            targets = _edit_assessment_targets(assessment.targets, status)
             if targets is not None:
                 assessments[name] = AssessmentProfile(name, targets)
                 save_assessment_profiles(assessments)
                 status.ok(f"Updated assessment profile: {name}")
+        elif action == "c":
+            copy_name = _prompt_assessment_name(assessments, status)
+            print("Review the copied cluster selection and make any needed changes.")
+            targets = _edit_assessment_targets(assessment.targets, status)
+            if targets is not None:
+                assessments[copy_name] = AssessmentProfile(copy_name, targets)
+                save_assessment_profiles(assessments)
+                status.ok(f"Copied assessment profile: {copy_name}")
         elif action == "d":
             if input(f"Type DELETE to remove assessment profile '{name}': ").strip() == "DELETE":
                 delete_assessment_profile(name)
@@ -220,6 +229,16 @@ def _run_args_for_mode(args: argparse.Namespace, *, diagnostic: bool) -> argpars
     return run_args
 
 
+def _settings_summary(args: argparse.Namespace) -> str:
+    """Return a non-secret summary of settings that influence guided runs."""
+
+    tls_mode = "verify TLS" if args.verify_tls else "allow self-signed TLS"
+    return (
+        f"Current settings: template={args.html_template} | {tls_mode} | "
+        f"SSH workers={args.ssh_parallel_workers}"
+    )
+
+
 def _confirm_run(
     assessment: AssessmentProfile, args: argparse.Namespace, *, diagnostic: bool
 ) -> bool:
@@ -264,6 +283,49 @@ def _select_assessment_targets(status: StatusPrinter) -> tuple[AssessmentTarget,
             for index in selected
         )
         return targets
+
+
+def _edit_assessment_targets(
+    current_targets: tuple[AssessmentTarget, ...], status: StatusPrinter
+) -> tuple[AssessmentTarget, ...] | None:
+    """Select a revised cluster set, retaining the copied/current members by default."""
+
+    entries = _connection_profile_entries()
+    if not entries:
+        status.warn("No connection profiles found. Create one first.")
+        return None
+    current_keys = {(target.technology, target.connection_profile) for target in current_targets}
+    current_numbers = [
+        index
+        for index, (technology, name, _address) in enumerate(entries, start=1)
+        if (technology, name) in current_keys
+    ]
+    print("\nEdit clusters in assessment profile")
+    for index, (technology, name, address) in enumerate(entries, start=1):
+        marker = "*" if index in current_numbers else " "
+        print(f"{marker} {index}. {technology.upper():4} {address:15} {name}")
+    current_text = ",".join(str(index) for index in current_numbers) or "none"
+    print("Enter revised numbers, A for all, blank to keep the copied selection, or R to cancel.")
+    while True:
+        choice = input(f"Clusters [{current_text}]: ").strip().lower()
+        if not choice:
+            return current_targets
+        if choice == "r":
+            return None
+        selected = (
+            range(1, len(entries) + 1) if choice == "a" else _parse_numbers(choice, len(entries))
+        )
+        if selected is None:
+            status.warn("Enter valid cluster numbers separated by commas")
+            continue
+        return tuple(
+            AssessmentTarget(
+                f"{entries[index - 1][0]}-{entries[index - 1][1]}",
+                entries[index - 1][0],
+                entries[index - 1][1],
+            )
+            for index in selected
+        )
 
 
 def _connection_profile_entries() -> list[tuple[str, str, str]]:
@@ -636,7 +698,7 @@ def _test_options(
     status: StatusPrinter,
     run_assessment: RunAssessment,
 ) -> int | None:
-    print("\nTEMP Test Options / Framework\n=============================")
+    print("\nDeveloper Options\n=================")
     print("S. Run framework smoke test\nR. Return")
     while True:
         choice = input("Selection: ").strip().lower()

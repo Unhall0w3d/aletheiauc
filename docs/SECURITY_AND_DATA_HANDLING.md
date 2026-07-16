@@ -39,5 +39,9 @@ make adjacent JSON, logs, artifacts, or review ZIPs safe to share. Review every
 bundle before external transfer and remove it according to the customer’s data
 retention policy.
 
+In the guided menu, both the engineering and customer-facing HTML reports are
+always produced. Only the explicit **diagnostic assessment** path creates the
+private artifacts, logs, and review ZIP; a standard assessment is report-only.
+
 Artifact and log directories use collision-safe run IDs and are never reused,
 preventing concurrent or same-timestamp assessments from mixing their output.

@@ -62,6 +62,12 @@ customer-deliverable `customer_safe_report.html`. This permits side-by-side
 review of the customer deliverable while retaining the engineering artifacts in
 the same private bundle.
 
+The guided menu always writes both HTML editions. A **standard assessment**
+writes the engineering report and adjacent customer-facing report only. A
+**diagnostic assessment** also writes artifacts and troubleshooting logs, then
+builds the private review ZIP. Both editions use the selected template and the
+same assessment facts.
+
 Customer-safe reports use the same assessment facts as engineering reports and
 do not use synthetic data. They retain profile and target names, hostnames, IP
 addresses, device identifiers, dial-plan values, CUC/CUCM configuration, and

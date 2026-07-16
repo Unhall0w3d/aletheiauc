@@ -173,7 +173,7 @@ Main menu options:
 - Run a diagnostic assessment (reports plus artifacts, troubleshooting logs, and review ZIP)
 - Profile management for connection profiles and saved multi-technology assessment profiles
 - Settings that remain in effect while the menu is open
-- Test/framework options
+- Developer Options
 - Quit
 
 When a health assessment runs, AletheiaUC prints an Executive Summary in the
@@ -187,11 +187,12 @@ Connection profiles are the single source of truth for cluster addresses,
 usernames, and encrypted credentials. A saved assessment profile only references
 one or more connection profiles; it never duplicates credentials.
 
-For a new profile, the CLI prompts for:
+For a new connection profile, the guided workflow prompts for the selected
+technology's:
 
 - Publisher IP address or FQDN
-- CUCM GUI/API username and password
-- CUCM OS/SSH username and password
+- GUI/API username and password
+- Platform/SSH username and password
 
 If an FQDN is entered, it is resolved and the resulting IP address is used for
 collector context.
@@ -607,11 +608,18 @@ Running `./aletheiauc.py` with no arguments opens the assessment workflow. It ca
   one connection-profile name can hold separate details for multiple technologies
 - Keep report, collection, network/TLS, and diagnostic settings in the menu session
   until changed or the program exits
+- Display the active report template, TLS behavior, and SSH worker count on the
+  main menu before starting a run
+- Copy an assessment profile, select its revised cluster membership, and save it
+  as a new profile without changing the original; the copied membership is
+  preselected and can be kept or revised
 - Run a **standard assessment** for the two HTML reports only, or a **diagnostic
   assessment** for those reports plus private artifacts, logs, and a review ZIP
   (the run confirmation shows the exact mode and target list before collection)
+- Use **Developer Options** only for framework smoke testing; it is separate from
+  customer assessment workflows
 
-The **Manage connection profiles** menu lets you select a profile and view its
+The **Profile Management → Connection profiles** menu lets you select a profile and view its
 non-secret address and username details, edit the full connection details for
 CUCM, CUC, CER, or IM&P (including replacement passwords), or delete it. Editing one
 technology preserves the other technology section of a shared profile.
@@ -666,7 +674,7 @@ Use `--reset-profile` to replace the saved profile:
 
 For an existing named profile, `--reset-technology cuc` re-prompts only for
 that technology's full connection details. The interactive equivalent is
-**Manage connection profiles → Edit connection details**.
+**Profile Management → Connection profiles → Edit connection details**.
 
 Use `--no-save-credentials` to avoid storing passwords for the current run:
 

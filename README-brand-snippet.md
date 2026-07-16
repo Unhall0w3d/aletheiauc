@@ -1,8 +1,3 @@
-<!-- AletheiaUC brand header -->
-<p align="center">
-  <img src="assets/brand/png/aletheiauc-readme-header.png" alt="AletheiaUC — Bringing UC Health to Light" width="100%">
-</p>
-
 <p align="center">
   <strong>Bringing UC Health to Light</strong><br>
   Assess · Diagnose · Improve · Optimize
