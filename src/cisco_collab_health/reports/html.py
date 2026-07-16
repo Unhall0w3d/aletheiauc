@@ -398,6 +398,7 @@ class HtmlReportBuilder:
         coverage_section = "" if self.customer_safe else self._coverage_section(report)
         registration_rows = self._registration_rows(report)
         registration_summary_rows = self._registration_summary_rows(report)
+        registration_balance_section = self._registration_balance_section(report)
         endpoint_runtime_coverage_section = self._endpoint_runtime_coverage_section(report)
         call_manager_runtime_resources_section = self._call_manager_runtime_resources_section(
             report
@@ -945,6 +946,7 @@ class HtmlReportBuilder:
         </tbody>
       </table>
     </section>
+    {registration_balance_section}
     {endpoint_runtime_coverage_section}
     {call_manager_runtime_resources_section}
     <section>
@@ -2318,6 +2320,50 @@ class HtmlReportBuilder:
                 "</tr>"
             )
         return "\n".join(rows)
+
+    def _registration_balance_section(self, report: AssessmentReport) -> str:
+        """Render an at-a-glance CUCM phone registration distribution, not a text-heavy list."""
+
+        phones = [
+            item for item in report.facts.registrations
+            if item.status.strip().casefold() == "registered"
+            and ((item.device_class or "").strip().casefold() in {"phone", "softphone", "mobile"}
+                 or item.name.strip().upper().startswith(("SEP", "CSF", "TCT", "BOT", "TAB")))
+            and item.registered_node
+        ]
+        counts = Counter(item.registered_node or "Unknown" for item in phones)
+        if len(counts) < 2:
+            return ""
+        total = sum(counts.values())
+        average = total / len(counts)
+        max_count = max(counts.values())
+        skewed = any(abs(count - average) / average > 0.15 for count in counts.values())
+        publisher_keys = {
+            value.casefold() for node in report.facts.nodes if node.role.casefold() == "publisher"
+            for value in (node.name, node.address) if value
+        }
+        publisher_count = sum(count for node, count in counts.items() if node.casefold() in publisher_keys)
+        advisory = ""
+        if skewed or publisher_count:
+            advisory = "<p class=\"meta\"><strong>Advisory:</strong> " + escape(
+                "Observed registration distribution warrants a CUCM Group and Device Pool review. "
+                "An uneven result can be intentional during failover or in active/standby designs."
+            ) + "</p>"
+        bars = "".join(
+            "<div class=\"registration-balance-row\">"
+            f"<span>{escape(self._identifier(node, 'Node'))}</span>"
+            f"<div class=\"registration-balance-track\"><i style=\"width:{count / max_count * 100:.1f}%\"></i></div>"
+            f"<strong>{count} <small>({count / total * 100:.1f}%)</small></strong></div>"
+            for node, count in sorted(counts.items(), key=lambda item: (-item[1], _natural_sort_key(item[0])))
+        )
+        return f"""
+    <section class="registration-balance">
+      <h2>Phone Registration Distribution</h2>
+      <p class="meta">Registered endpoint-like phones by collected CUCM node. Total observed: {total}. This is a point-in-time distribution, not a capacity calculation.</p>
+      <style>.registration-balance-row{{display:grid;grid-template-columns:minmax(130px,25%) 1fr auto;gap:12px;align-items:center;margin:10px 20px}}.registration-balance-track{{height:12px;border-radius:99px;background:rgba(128,150,180,.22);overflow:hidden}}.registration-balance-track i{{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--cyan,#73c7d8),var(--info,#2f7cff))}}.registration-balance small{{color:var(--muted);font-weight:400}}</style>
+      {bars}{advisory}
+    </section>
+"""
 
     def _endpoint_runtime_coverage_section(self, report: AssessmentReport) -> str:
         """Report configured endpoints that have no current/recent RIS observation."""

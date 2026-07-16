@@ -444,6 +444,45 @@ class RegistrationSummaryRule:
         ]
 
 
+class RegistrationBalanceRule:
+    """Advisory-only assessment of observed phone registration distribution."""
+
+    rule_id = "cucm.registration_balance"
+
+    def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
+        phones = _phone_registrations(facts.registrations)
+        by_node = Counter(
+            registration.registered_node or "Unknown"
+            for registration in phones
+            if registration.status.strip().casefold() == "registered"
+        )
+        known = {node: count for node, count in by_node.items() if node != "Unknown"}
+        if len(known) < 2:
+            return []
+        average = sum(known.values()) / len(known)
+        skewed = [node for node, count in known.items() if abs(count - average) / average > 0.15]
+        publisher_names = {
+            value.casefold() for node in facts.nodes if node.role.casefold() == "publisher"
+            for value in (node.name, node.address) if value
+        }
+        publisher_count = sum(count for node, count in known.items() if node.casefold() in publisher_names)
+        if not skewed and not publisher_count:
+            return []
+        facts_list = [f"{node}: {count} registered phone(s)" for node, count in sorted(known.items())]
+        if publisher_count:
+            facts_list.append(f"Publisher registrations observed: {publisher_count}")
+        return [HealthFinding(
+            rule_id=self.rule_id,
+            title="Phone registration distribution should be reviewed",
+            severity=FindingSeverity.INFO,
+            recommendation_kind=RecommendationKind.ENGINEERING_RECOMMENDATION,
+            facts=facts_list,
+            reasoning="The observed registered-phone counts differ by more than 15% from the collected-node average, or phones are registered to the Publisher. This is an advisory, not proof of an issue: active/standby designs and failover can be intentionally uneven.",
+            recommendation="Review Cisco Unified CM Groups and Device Pools. Confirm primary call-processing placement and that Publisher registrations are intentional fallback/tertiary behavior.",
+            evidence=[EvidenceRef(source="RISPort", operation="selectCmDevice", confidence="high")],
+        )]
+
+
 class SipTrunkRuntimeRule:
     """Identify SIP trunks that are not currently registered in RIS."""
 
@@ -506,6 +545,17 @@ def _is_sip_trunk(registration: DeviceRegistrationFact) -> bool:
             if value
         ).lower()
     )
+
+
+def _phone_registrations(registrations: list[DeviceRegistrationFact]) -> list[DeviceRegistrationFact]:
+    """Keep endpoint-like phone registrations out of gateway/trunk resource counts."""
+
+    phone_classes = {"phone", "softphone", "mobile"}
+    return [
+        registration for registration in registrations
+        if (registration.device_class or "").strip().casefold() in phone_classes
+        or registration.name.strip().upper().startswith(("SEP", "CSF", "TCT", "BOT", "TAB"))
+    ]
 
 
 class ServiceSummaryRule:
