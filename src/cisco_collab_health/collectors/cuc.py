@@ -222,6 +222,15 @@ MESSAGE_AGING_RULE_PROBE = CupiProbe(
     ),
 )
 
+MAILBOX_USAGE_USER_PROBE = CupiProbe(
+    "CucMailboxUsageCandidate",
+    "Mailbox usage users",
+    "/vmrest/users",
+    ("User",),
+    identity_fields=("displayname", "alias", "name"),
+    detail_fields=(("alias", ("alias",)),),
+)
+
 
 class CucCollector:
     """Collect bounded CUC inventory and sanitized configuration through CUPI GETs."""
@@ -398,12 +407,141 @@ class CucCollector:
                 )
 
         if self.diagnostic_capture:
+            self._collect_mailbox_usage(
+                node,
+                context,
+                max_records,
+                facts,
+                warnings,
+                evidence,
+                notes,
+            )
             notes.append(
                 "Detailed CUPI configuration collection retained only reviewed non-secret fields; "
                 f"each resource was bounded to {max_records} record(s), collected in pages of "
                 f"up to {page_size}."
             )
         return CollectionResult(self.name, facts, warnings=warnings, evidence=evidence, notes=notes)
+
+    def _collect_mailbox_usage(
+        self,
+        node: str,
+        context: CollectionContext,
+        max_records: int,
+        facts: AssessmentFacts,
+        warnings: list[str],
+        evidence: list[EvidenceRef],
+        notes: list[str],
+    ) -> None:
+        """Collect bounded per-user mailbox attributes for the capacity top-talker view."""
+
+        page_size = min(max_records, 500)
+        users: list[ConfigurationObjectFact] = []
+        total: int | None = None
+        previous_payload = ""
+        for page_number in range(1, (max_records + page_size - 1) // page_size + 1):
+            endpoint = f"https://{node}/vmrest/users?rowsPerPage={page_size}&pageNumber={page_number}"
+            operation = f"CucMailboxUsage_users_page_{page_number:06d}"
+            try:
+                response = self.http_client.get(
+                    endpoint,
+                    context,
+                    node=node,
+                    interface="cuc_cupi",
+                    operation=operation,
+                )
+            except CapturedHttpError as exc:
+                warnings.append(f"CUC CUPI mailbox-usage user page {page_number} GET failed: {exc}")
+                break
+            evidence.append(
+                EvidenceRef(
+                    source="CUC.CUPI",
+                    operation=operation,
+                    node=node,
+                    artifact_path=response.response_artifact_path,
+                    confidence="high",
+                )
+            )
+            if response.body == previous_payload:
+                notes.append("CUC CUPI mailbox-usage user listing stopped after a repeated page.")
+                break
+            previous_payload = response.body
+            total = _cupi_total(response.body) if total is None else total
+            page_users = _cupi_configuration_records(response.body, MAILBOX_USAGE_USER_PROBE)
+            if not page_users:
+                break
+            users.extend(page_users[: max_records - len(users)])
+            if len(users) >= max_records or (total is not None and len(users) >= total):
+                break
+
+        if not users:
+            return
+
+        collected = 0
+        failed = 0
+        for index, user in enumerate(users, start=1):
+            if not user.uuid:
+                failed += 1
+                continue
+            endpoint = f"https://{node}/vmrest/users/{user.uuid}/mailboxattributes"
+            operation = f"CucMailboxUsage_attributes_{index:06d}"
+            try:
+                response = self.http_client.get(
+                    endpoint,
+                    context,
+                    node=node,
+                    interface="cuc_cupi",
+                    operation=operation,
+                )
+            except CapturedHttpError:
+                failed += 1
+                continue
+            evidence.append(
+                EvidenceRef(
+                    source="CUC.CUPI",
+                    operation=operation,
+                    node=node,
+                    artifact_path=response.response_artifact_path,
+                    confidence="high",
+                )
+            )
+            details = _mailbox_usage_details(response.body)
+            if details is None:
+                failed += 1
+                continue
+            facts.configuration_objects.append(
+                ConfigurationObjectFact(
+                    object_type="CucMailboxUsage",
+                    name=user.name,
+                    details={**details, **({"alias": user.details["alias"]} if "alias" in user.details else {})},
+                    source="CUC.CUPI/vmrest/users/<user>/mailboxattributes",
+                    uuid=user.uuid,
+                )
+            )
+            collected += 1
+
+        coverage = f"{len(users)} of {total}" if total is not None else f"{len(users)} users"
+        facts.configuration_objects.append(
+            ConfigurationObjectFact(
+                object_type="CucMailboxUsageInventory",
+                name="Mailbox usage",
+                details={
+                    "total": str(total) if total is not None else "unknown",
+                    "users_considered": str(len(users)),
+                    "mailboxes_collected": str(collected),
+                    "attribute_failures": str(failed),
+                    "coverage": coverage,
+                    "collection_status": (
+                        "complete" if total is not None and len(users) >= total and failed == 0 else "partial"
+                    ),
+                },
+                source="CUC.CUPI/vmrest/users/<user>/mailboxattributes",
+            )
+        )
+        notes.append(
+            "CUC mailbox-usage collection used read-only mailboxattributes requests for "
+            f"{len(users)} user(s); {collected} mailbox size record(s) were normalized."
+        )
 
     def _collect_message_aging_rules(
         self,
@@ -520,6 +658,43 @@ def _message_aging_rule_links(payload: str) -> list[tuple[str, str]]:
         if link not in links:
             links.append(link)
     return links
+
+
+def _mailbox_usage_details(payload: str) -> dict[str, str] | None:
+    """Normalize the non-secret, read-only mailbox capacity attributes from CUPI."""
+
+    records: list[dict[str, str]] = []
+    try:
+        document = json.loads(payload)
+        records = [_flatten_json_scalars(item) for item in _walk_json_dicts(document)]
+    except (json.JSONDecodeError, TypeError):
+        try:
+            root = ET.fromstring(payload)
+            records = [
+                {
+                    _key(child.tag.rsplit("}", 1)[-1]): (child.text or "").strip()
+                    for child in root.iter()
+                    if child is not root and (child.text or "").strip()
+                }
+            ]
+        except ET.ParseError:
+            return None
+    for record in records:
+        byte_size = _first(record, ("bytesize",))
+        if byte_size is None:
+            continue
+        try:
+            if int(byte_size) < 0:
+                return None
+        except ValueError:
+            return None
+        details = {"used_bytes": byte_size}
+        if messages := _first(record, ("nummessages",)):
+            details["message_count"] = messages
+        if mounted := _first(record, ("mounted",)):
+            details["mounted"] = mounted
+        return details
+    return None
 
 
 def _iter_xml_records(root: Any, normalized_name: str) -> Iterator[Any]:

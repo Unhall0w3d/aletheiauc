@@ -10,6 +10,7 @@ from cisco_collab_health.collectors.cuc import (
     CucCollector,
     _cupi_configuration_records,
     _cupi_total,
+    _mailbox_usage_details,
 )
 from cisco_collab_health.models.assessment import AssessmentReport
 from cisco_collab_health.models.facts import AssessmentFacts, ConfigurationObjectFact
@@ -114,10 +115,60 @@ class PaginatedScheduleHttpClient:
         )
 
 
+class MailboxUsageHttpClient:
+    def get(self, endpoint, context, **kwargs):
+        del context, kwargs
+        if "/vmrest/users?" in endpoint:
+            return CapturedHttpResponse(
+                200,
+                "OK",
+                """<Users total=\"3\"><User><ObjectId>USER-1</ObjectId><DisplayName>Ada</DisplayName><Alias>ada</Alias></User>
+                <User><ObjectId>USER-2</ObjectId><DisplayName>Grace</DisplayName><Alias>grace</Alias></User>
+                <User><ObjectId>USER-3</ObjectId><DisplayName>Linus</DisplayName><Alias>linus</Alias></User></Users>""",
+                Path("users.txt"),
+            )
+        if "/mailboxattributes" in endpoint:
+            size = {"USER-1": 1024, "USER-2": 3 * 1024 * 1024, "USER-3": 512 * 1024}[next(
+                value for value in ("USER-1", "USER-2", "USER-3") if value in endpoint
+            )]
+            return CapturedHttpResponse(
+                200,
+                "OK",
+                f"<MailboxAttributes><ByteSize>{size}</ByteSize><NumMessages>7</NumMessages><Mounted>true</Mounted></MailboxAttributes>",
+                Path("mailbox.txt"),
+            )
+        return CapturedHttpResponse(200, "OK", '<Items total="0" />', Path("response.txt"))
+
+
 class CucCollectorTests(unittest.TestCase):
     def test_total_parser_supports_xml_and_json(self) -> None:
         self.assertEqual(_cupi_total('<Users total="42" />'), 42)
         self.assertEqual(_cupi_total('{"total": 7}'), 7)
+
+    def test_mailbox_usage_parser_retains_only_capacity_attributes(self) -> None:
+        self.assertEqual(
+            _mailbox_usage_details(
+                "<MailboxAttributes><ByteSize>1024</ByteSize><NumMessages>4</NumMessages><Mounted>true</Mounted><Secret>x</Secret></MailboxAttributes>"
+            ),
+            {"used_bytes": "1024", "message_count": "4", "mounted": "true"},
+        )
+
+    def test_diagnostic_collection_captures_bounded_mailbox_usage(self) -> None:
+        result = CucCollector(http_client=MailboxUsageHttpClient(), diagnostic_capture=True).collect(
+            CollectionContext(product="cuc", publisher_ip="192.0.2.20", diagnostic_cupi_max_records=10)
+        )
+
+        mailboxes = [
+            item for item in result.facts.configuration_objects if item.object_type == "CucMailboxUsage"
+        ]
+        self.assertEqual(len(mailboxes), 3)
+        self.assertEqual(max(mailboxes, key=lambda item: int(item.details["used_bytes"])).name, "Grace")
+        inventory = next(
+            item
+            for item in result.facts.configuration_objects
+            if item.object_type == "CucMailboxUsageInventory"
+        )
+        self.assertEqual(inventory.details["collection_status"], "complete")
 
     def test_collector_captures_bounded_mailbox_inventory(self) -> None:
         result = CucCollector(http_client=FakeHttpClient()).collect(
@@ -140,7 +191,7 @@ class CucCollectorTests(unittest.TestCase):
         )
 
         self.assertEqual(len(result.facts.configuration_objects), 17)
-        self.assertEqual(len(result.evidence), 17)
+        self.assertEqual(len(result.evidence), 18)
         self.assertTrue(
             all(
                 int(item.details["requested_rows"]) <= 500

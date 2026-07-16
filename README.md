@@ -413,6 +413,12 @@ Connection configuration resources are collected in read-only pages of up to
 capture is evidence-oriented and is not a claim of complete configuration
 inventory.
 
+For Unity Connection, diagnostic capture also obtains each bounded user's
+read-only CUPI mailbox attributes and renders the top ten observed mailbox
+consumers by used size. The view is marked partial whenever the user cap or a
+mailbox-attribute request prevents complete cluster coverage; it never claims a
+partial result is a cluster-wide top-ten ranking.
+
 If a lab uses alternate API ports, override them at startup:
 
 ```bash

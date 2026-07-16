@@ -376,6 +376,7 @@ class HtmlReportBuilder:
         methodology_scope_section = self._methodology_scope_section(report)
         target_scope_section = self._target_scope_section(report)
         cuc_inventory_section = self._cuc_inventory_section(report)
+        cuc_mailbox_usage_section = self._cuc_mailbox_usage_section(report)
         cuc_configuration_section = self._cuc_configuration_section(report)
         cuc_platform_section = self._cuc_platform_section(report)
         cuc_informix_section = self._cuc_informix_section(report)
@@ -525,11 +526,12 @@ class HtmlReportBuilder:
             "evidence",
         )
         infrastructure_content = ""
-        analysis_cuc_platform_section = cuc_platform_section
+        analysis_cuc_platform_section = cuc_mailbox_usage_section + cuc_platform_section
         if not self.customer_safe:
             infrastructure_content = (
                 infrastructure_chapter
                 + cuc_inventory_section
+                + cuc_mailbox_usage_section
                 + cuc_configuration_section
                 + cuc_platform_section
                 + cuc_informix_section
@@ -2785,6 +2787,55 @@ class HtmlReportBuilder:
 </section>
 """
 
+    def _cuc_mailbox_usage_section(self, report: AssessmentReport) -> str:
+        """Render the highest observed CUC mailbox consumers when capacity data was collected."""
+
+        mailboxes = [
+            item
+            for item in report.facts.configuration_objects
+            if item.object_type == "CucMailboxUsage" and item.details.get("used_bytes", "").isdigit()
+        ]
+        if not mailboxes:
+            return ""
+        inventory = next(
+            (
+                item
+                for item in report.facts.configuration_objects
+                if item.object_type == "CucMailboxUsageInventory"
+            ),
+            None,
+        )
+        rows = "".join(
+            "<tr>"
+            f"<td>{rank}</td><td>{escape(self._identifier(item.name, 'User'))}</td>"
+            f"<td>{escape(display_text(item.details.get('alias')))}</td>"
+            f"<td>{escape(_format_byte_size(int(item.details['used_bytes'])))}</td>"
+            f"<td>{escape(display_text(item.details.get('message_count')))}</td>"
+            f"<td>{escape(display_text(item.details.get('mounted')))}</td>"
+            "</tr>"
+            for rank, item in enumerate(
+                sorted(mailboxes, key=lambda item: int(item.details["used_bytes"]), reverse=True)[:10],
+                start=1,
+            )
+        )
+        coverage = inventory.details.get("coverage", "bounded collection") if inventory else "unknown"
+        status = inventory.details.get("collection_status", "collected") if inventory else "collected"
+        limitation = (
+            " The ranking is limited to the collected users and is not a cluster-wide ranking."
+            if status != "complete"
+            else ""
+        )
+        return f"""
+    <section class="technology-section cuc-section">
+      <h2>Unity Connection Mailbox Capacity — Top 10</h2>
+      <p class="meta">Source: read-only CUPI mailbox attributes. Each value is the current size of that user's voice messages in the mailbox, including message data tracked by Unity Connection. Coverage: {escape(coverage)} ({escape(status)}).{limitation}</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Rank</th><th>User</th><th>Alias</th><th>Used size</th><th>Messages</th><th>Mounted</th></tr></thead>
+        <tbody>{rows}</tbody>
+      </table></div>
+    </section>
+"""
+
     @staticmethod
     def _cuc_inventory_coverage(item: ConfigurationObjectFact) -> str:
         coverage = item.details.get("coverage")
@@ -3720,6 +3771,18 @@ def _technology_from_product(product: str) -> str | None:
     if "callmanager" in normalized or "unified communications manager" in normalized:
         return "cucm"
     return None
+
+
+def _format_byte_size(value: int) -> str:
+    """Format collected byte counts for capacity tables without using decimal assumptions."""
+
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    size = float(value)
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return f"{value} B"
 
 
 def _cpu_counters_are_zero_only(report: AssessmentReport) -> bool:

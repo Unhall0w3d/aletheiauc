@@ -101,6 +101,31 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("Cisco support ended", payload)
         self.assertIn("v-12-5-on-premises-calling-applications-eol.html", payload)
 
+    def test_html_report_renders_cuc_mailbox_capacity_top_ten(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                configuration_objects=[
+                    ConfigurationObjectFact(
+                        "CucMailboxUsage", "Small Mailbox", {"used_bytes": "1024"}, "CUC.CUPI"
+                    ),
+                    ConfigurationObjectFact(
+                        "CucMailboxUsage", "Largest Mailbox", {"used_bytes": "3145728", "message_count": "8"}, "CUC.CUPI"
+                    ),
+                    ConfigurationObjectFact(
+                        "CucMailboxUsageInventory", "Mailbox usage", {"coverage": "2 of 2", "collection_status": "complete"}, "CUC.CUPI"
+                    ),
+                ]
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        payload = HtmlReportBuilder(customer_safe=True).build(report)
+
+        self.assertIn("Unity Connection Mailbox Capacity — Top 10", payload)
+        self.assertLess(payload.index("Largest Mailbox"), payload.index("Small Mailbox"))
+        self.assertIn("3.0 MiB", payload)
+
     def setUp(self) -> None:
         self.report = AssessmentEngine(
             collectors=[SampleCollector()],
