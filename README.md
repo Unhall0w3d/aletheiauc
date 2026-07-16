@@ -169,19 +169,22 @@ ccha --help
 
 Main menu options:
 
-- Run an assessment by selecting one or more clusters
-- Manage saved assessment sets
-- Manage connection profiles
+- Run a standard assessment (engineering and customer-facing reports)
+- Run a diagnostic assessment (reports plus artifacts, troubleshooting logs, and review ZIP)
+- Profile management for connection profiles and saved multi-technology assessment profiles
+- Settings that remain in effect while the menu is open
 - Test/framework options
 - Quit
 
 When a health assessment runs, AletheiaUC prints an Executive Summary in the
-terminal, writes a styled HTML report under `reports/`, and writes local
-parser/debug artifacts under `assessment_runs/` by default. It also writes a
-shareable troubleshooting log bundle under `logs/`.
+terminal and writes a styled HTML report under `reports/`. A standard guided
+assessment writes the paired engineering and customer-facing reports only. A
+diagnostic guided assessment, and direct CLI runs unless disabled, also write
+local parser/debug artifacts under `assessment_runs/` and a troubleshooting log
+bundle under `logs/`.
 
 Connection profiles are the single source of truth for cluster addresses,
-usernames, and encrypted credentials. A saved assessment set only references
+usernames, and encrypted credentials. A saved assessment profile only references
 one or more connection profiles; it never duplicates credentials.
 
 For a new profile, the CLI prompts for:
@@ -596,14 +599,15 @@ Running `./aletheiauc.py` with no arguments opens the assessment workflow. It ca
 - Show every saved cluster as `<technology> <Publisher IP> <profile name>` and
   let you select one cluster for a single-cluster assessment or any number of
   clusters for a consolidated assessment
-- Save an ad-hoc selection as a reusable assessment set
-- Create, run, edit cluster membership for, or delete saved assessment sets
+- Save an ad-hoc selection as a reusable multi-technology assessment profile
+- Create, view, edit cluster membership for, or delete saved assessment profiles
 - Create a connection profile and prompt once for its address, GUI/API
   credentials, and Platform/SSH credentials
-- Combine diagnostic capture and Downloads-folder review ZIP export into one
-  recommended menu choice
-- Configure the same report, artifact, log, diagnostic, inventory, port, and TLS
-  settings available as command-line options before starting an assessment
+- Keep report, collection, network/TLS, and diagnostic settings in the menu session
+  until changed or the program exits
+- Run a **standard assessment** for the two HTML reports only, or a **diagnostic
+  assessment** for those reports plus private artifacts, logs, and a review ZIP
+  (the run confirmation shows the exact mode and target list before collection)
 
 The **Manage connection profiles** menu lets you select a profile and view its
 non-secret address and username details, edit the full connection details for

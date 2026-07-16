@@ -36,25 +36,34 @@ def run_menu(
     run_assessment: RunAssessment,
     run_multi_assessment: RunMultiAssessment,
 ) -> int:
-    """Run the primary guided workflow while retaining development options."""
+    """Run the guided workflow with session settings and explicit run modes."""
 
+    settings = argparse.Namespace(**vars(args))
     while True:
         print("\nAletheiaUC Main Menu\n====================")
-        print("1. Run assessment (select one or more clusters)")
-        print("2. Manage saved assessment sets")
-        print("3. Manage connection profiles")
-        print("4. Test/framework options")
+        print("1. Run standard assessment")
+        print("2. Run diagnostic assessment (full evidence bundle)")
+        print("3. Profile management")
+        print("4. Settings")
+        print("5. Test/framework options")
         print("Q. Quit\n")
         choice = input("Selection: ").strip().lower()
         if choice == "1":
-            result = _run_selected_profiles(args, status, run_multi_assessment)
+            result = _choose_and_run_assessment(
+                settings, status, run_multi_assessment, diagnostic=False
+            )
         elif choice == "2":
-            result = _manage_assessment_sets(args, status, run_multi_assessment)
+            result = _choose_and_run_assessment(
+                settings, status, run_multi_assessment, diagnostic=True
+            )
         elif choice == "3":
-            _manage_profiles(status)
+            _manage_profile_management(status)
             continue
         elif choice == "4":
-            result = _test_options(args, status, run_assessment)
+            _manage_settings(settings, status)
+            continue
+        elif choice == "5":
+            result = _test_options(settings, status, run_assessment)
         elif choice == "q":
             status.info("Exiting AletheiaUC")
             return 0
@@ -65,10 +74,37 @@ def run_menu(
             return result
 
 
+def _choose_and_run_assessment(
+    args: argparse.Namespace,
+    status: StatusPrinter,
+    run_multi: RunMultiAssessment,
+    *,
+    diagnostic: bool,
+) -> int | None:
+    while True:
+        print("\nAssessment Selection\n====================")
+        print("1. Select clusters for this run")
+        print("2. Use a saved assessment profile")
+        print("R. Return")
+        choice = input("Selection: ").strip().lower()
+        if choice == "r":
+            return None
+        if choice == "1":
+            return _run_selected_profiles(args, status, run_multi, diagnostic=diagnostic)
+        if choice == "2":
+            assessment = _choose_saved_assessment_profile(status)
+            if assessment is not None:
+                return _run_targets(args, status, run_multi, assessment, diagnostic=diagnostic)
+        else:
+            status.warn("Invalid selection")
+
+
 def _run_selected_profiles(
     args: argparse.Namespace,
     status: StatusPrinter,
     run_multi: RunMultiAssessment,
+    *,
+    diagnostic: bool,
 ) -> int | None:
     targets = _select_assessment_targets(status)
     if targets is None:
@@ -79,24 +115,22 @@ def _run_selected_profiles(
         assessments = load_assessment_profiles()
         assessments[name] = AssessmentProfile(name, targets)
         save_assessment_profiles(assessments)
-        status.ok(f"Saved assessment set: {name}")
-    return _run_targets(args, status, run_multi, AssessmentProfile(name, targets))
+        status.ok(f"Saved assessment profile: {name}")
+    return _run_targets(
+        args, status, run_multi, AssessmentProfile(name, targets), diagnostic=diagnostic
+    )
 
 
-def _manage_assessment_sets(
-    args: argparse.Namespace,
-    status: StatusPrinter,
-    run_multi: RunMultiAssessment,
-) -> int | None:
+def _manage_assessment_profiles(status: StatusPrinter) -> None:
     while True:
         assessments = load_assessment_profiles()
-        print("\nSaved Assessment Sets\n=====================")
+        print("\nAssessment Profiles\n===================")
         for index, name in enumerate(sorted(assessments), start=1):
             print(f"{index}. {name} ({len(assessments[name].targets)} clusters)")
         print("C. Create from connection profiles\nR. Return")
         choice = input("Selection: ").strip()
         if choice.lower() == "r":
-            return None
+            return
         if choice.lower() == "c":
             targets = _select_assessment_targets(status)
             if targets is None:
@@ -104,7 +138,7 @@ def _manage_assessment_sets(
             name = _prompt_assessment_name(assessments, status)
             assessments[name] = AssessmentProfile(name, targets)
             save_assessment_profiles(assessments)
-            status.ok(f"Saved assessment set: {name}")
+            status.ok(f"Saved assessment profile: {name}")
             continue
         names = sorted(assessments)
         if not choice.isdigit() or not 1 <= int(choice) <= len(names):
@@ -113,23 +147,32 @@ def _manage_assessment_sets(
         name = names[int(choice) - 1]
         assessment = assessments[name]
         _show_assessment_set(assessment)
-        action = input("R=Run, E=Edit clusters, D=Delete, B=Back: ").strip().lower()
-        if action == "r":
-            return _run_targets(args, status, run_multi, assessment)
+        action = input("V=View, E=Edit clusters, D=Delete, B=Back: ").strip().lower()
+        if action == "v":
+            continue
         if action == "e":
             targets = _select_assessment_targets(status)
             if targets is not None:
                 assessments[name] = AssessmentProfile(name, targets)
                 save_assessment_profiles(assessments)
-                status.ok(f"Updated assessment set: {name}")
+                status.ok(f"Updated assessment profile: {name}")
         elif action == "d":
-            if input(f"Type DELETE to remove assessment set '{name}': ").strip() == "DELETE":
+            if input(f"Type DELETE to remove assessment profile '{name}': ").strip() == "DELETE":
                 delete_assessment_profile(name)
-                status.ok(f"Deleted assessment set: {name}")
+                status.ok(f"Deleted assessment profile: {name}")
             else:
                 status.info("Assessment deletion cancelled")
         elif action != "b":
             status.warn("Invalid selection")
+
+
+def _choose_saved_assessment_profile(status: StatusPrinter) -> AssessmentProfile | None:
+    assessments = load_assessment_profiles()
+    if not assessments:
+        status.warn("No saved assessment profiles found. Create one under Profile Management.")
+        return None
+    name = _choose_name("Saved Assessment Profiles", sorted(assessments), status)
+    return assessments.get(name) if name is not None else None
 
 
 def _run_targets(
@@ -137,16 +180,59 @@ def _run_targets(
     status: StatusPrinter,
     run_multi: RunMultiAssessment,
     assessment: AssessmentProfile,
+    *,
+    diagnostic: bool,
 ) -> int | None:
     _show_assessment_set(assessment)
-    run_args = _prompt_run_mode(args)
-    if run_args is None:
+    run_args = _run_args_for_mode(args, diagnostic=diagnostic)
+    if not _confirm_run(assessment, run_args, diagnostic=diagnostic):
         return None
     resolved = resolve_assessment_targets(
         assessment,
         save_credentials=not run_args.no_save_credentials,
     )
     return run_multi(run_args, status, assessment.name, resolved)
+
+
+def _run_args_for_mode(args: argparse.Namespace, *, diagnostic: bool) -> argparse.Namespace:
+    """Copy session settings and apply the selected guided-run contract."""
+
+    run_args = argparse.Namespace(**vars(args))
+    run_args._prompt_ssh_host_keys = True
+    run_args._prompt_ssh_password_retry = True
+    # Both guided modes deliver the customer and engineering HTML reports.
+    run_args.no_html_report = False
+    run_args.customer_safe_report = False
+    run_args.include_customer_safe_report = True
+    if diagnostic:
+        run_args.diagnostic_capture = True
+        run_args.export_review_zip = True
+        run_args.no_logs = False
+        run_args.no_artifacts = False
+    else:
+        # A standard assessment is intentionally report-only.  Its collection
+        # and presentation settings still come from the session configuration.
+        run_args.diagnostic_capture = False
+        run_args.export_review_zip = False
+        run_args.no_logs = True
+        run_args.no_artifacts = True
+    return run_args
+
+
+def _confirm_run(
+    assessment: AssessmentProfile, args: argparse.Namespace, *, diagnostic: bool
+) -> bool:
+    print("\nRun Confirmation\n================")
+    print(f"Mode: {'Diagnostic assessment (full evidence bundle)' if diagnostic else 'Standard assessment'}")
+    print(f"Clusters: {len(assessment.targets)}")
+    for target in assessment.targets:
+        print(f"  - {target.technology.upper()} {target.connection_profile}")
+    print(f"Report template: {args.html_template}")
+    print("Reports: engineering and customer-facing HTML")
+    print(f"TLS verification: {'enabled' if args.verify_tls else 'disabled'}")
+    if diagnostic:
+        print("Bundle: artifacts, logs, and private review ZIP")
+    return _yes_no("Start this assessment?", default=True)
 
 
 def _select_assessment_targets(status: StatusPrinter) -> tuple[AssessmentTarget, ...] | None:
@@ -263,6 +349,25 @@ def _manage_profiles(status: StatusPrinter) -> None:
             status.warn("Invalid selection")
 
 
+def _manage_profile_management(status: StatusPrinter) -> None:
+    """Keep technology connection profiles and multi-cluster profiles together."""
+
+    while True:
+        print("\nProfile Management\n==================")
+        print("1. Connection profiles by technology")
+        print("2. Assessment profiles (multi-technology)")
+        print("R. Return")
+        choice = input("Selection: ").strip().lower()
+        if choice == "1":
+            _manage_profiles(status)
+        elif choice == "2":
+            _manage_assessment_profiles(status)
+        elif choice == "r":
+            return
+        else:
+            status.warn("Invalid selection")
+
+
 def _create_connection_profile(existing: list[str], status: StatusPrinter) -> None:
     technology = _choose_technology(status)
     if technology is None:
@@ -304,46 +409,32 @@ def _edit_profile(profile_name: str, status: StatusPrinter) -> None:
     return None
 
 
-def _prompt_run_mode(args: argparse.Namespace) -> argparse.Namespace | None:
-    run_args = argparse.Namespace(**vars(args))
-    # Interactive assessments ask about each actual, previously unseen SSH key.
-    # This is deliberately separate from the non-interactive CLI enrollment flag.
-    run_args._prompt_ssh_host_keys = True
-    run_args._prompt_ssh_password_retry = True
+def _manage_settings(args: argparse.Namespace, status: StatusPrinter) -> None:
+    """Configure session defaults; returning here never starts an assessment."""
+
     while True:
-        print("\nRun Options\n===========")
-        print("1. Output and reports")
-        print("2. Artifacts and logs")
-        print("3. Collection and diagnostics")
-        print("4. Network and TLS")
-        print("S. Start recommended assessment\nR. Return")
+        print("\nSettings\n========")
+        print(f"1. Reports (template: {args.html_template})")
+        print("2. Collection")
+        print(f"3. Network and TLS ({'verify' if args.verify_tls else 'allow self-signed'})")
+        print("4. Artifact and log locations")
+        print("5. Diagnostic collection limits")
+        print("R. Return")
         choice = input("Selection: ").strip().lower()
         if choice == "1":
-            _configure_output(run_args)
+            _configure_output(args)
         elif choice == "2":
-            _configure_storage(run_args)
+            _configure_collection(args)
         elif choice == "3":
-            _configure_collection(run_args)
+            _configure_network(args)
         elif choice == "4":
-            _configure_network(run_args)
-        elif choice in {"", "s"}:
-            # The primary start action follows the established guided-workflow
-            # recommendation. Explicit settings in the relevant submenus win.
-            if not getattr(run_args, "_diagnostics_configured", False):
-                run_args.diagnostic_capture = True
-            if not getattr(run_args, "_storage_configured", False):
-                run_args.export_review_zip = True
-                run_args.no_logs = False
-                run_args.no_artifacts = False
-            if run_args.export_review_zip and run_args.no_logs:
-                status_message = "Review ZIP requires troubleshooting logs; logs have been enabled."
-                print(f"[INFO] {status_message}")
-                run_args.no_logs = False
-            return run_args
+            _configure_storage(args)
+        elif choice == "5":
+            _configure_diagnostic_limits(args)
         elif choice == "r":
-            return None
+            return
         else:
-            print("Invalid selection")
+            status.warn("Invalid selection")
 
 
 def _configure_output(args: argparse.Namespace) -> None:
@@ -353,16 +444,13 @@ def _configure_output(args: argparse.Namespace) -> None:
         args.html_template,
     )
     args.format = _choose_value("Terminal format", {"1": "summary", "2": "json"}, args.format)
-    args.no_html_report = not _yes_no("Write HTML report?", default=not args.no_html_report)
-    if not args.no_html_report:
-        args.html_report = _optional_value("HTML report path", args.html_report)
-        args.customer_safe_report = _yes_no(
-            "Build customer-deliverable HTML?", default=args.customer_safe_report
-        )
+    args.no_html_report = False
+    args.html_report = _optional_value("Engineering HTML report path", args.html_report)
+    print("[INFO] Guided runs always create engineering and customer-facing HTML reports.")
 
 
 def _configure_storage(args: argparse.Namespace) -> None:
-    args._storage_configured = True
+    print("These locations apply when running a diagnostic assessment.")
     args.no_artifacts = not _yes_no("Write local artifacts?", default=not args.no_artifacts)
     if not args.no_artifacts:
         args.artifact_dir = _required_value("Artifact directory", args.artifact_dir)
@@ -378,7 +466,6 @@ def _configure_storage(args: argparse.Namespace) -> None:
 
 
 def _configure_collection(args: argparse.Namespace) -> None:
-    args._diagnostics_configured = True
     args.no_save_credentials = not _yes_no(
         "Save prompted passwords in the OS credential store?", default=not args.no_save_credentials
     )
@@ -392,24 +479,24 @@ def _configure_collection(args: argparse.Namespace) -> None:
         args.phone_inventory_max_devices = _positive_integer(
             "Phone inventory maximum devices", args.phone_inventory_max_devices
         )
-    args.diagnostic_capture = _yes_no(
-        "Capture diagnostic API evidence?", default=args.diagnostic_capture
-    )
-    if args.diagnostic_capture:
-        args.diagnostic_max_devices = _bounded_integer(
-            "Diagnostic maximum devices", args.diagnostic_max_devices, 1, 2000
-        )
-        args.diagnostic_axl_page_size = _positive_integer(
-            "Diagnostic AXL page size", args.diagnostic_axl_page_size
-        )
-        args.diagnostic_axl_max_records = _positive_integer(
-            "Diagnostic AXL maximum records", args.diagnostic_axl_max_records
-        )
-        args.diagnostic_cupi_max_records = _positive_integer(
-            "Diagnostic CUPI maximum records", args.diagnostic_cupi_max_records
-        )
     args.ssh_parallel_workers = _positive_integer(
         "Independent UCOS SSH node workers", args.ssh_parallel_workers
+    )
+
+
+def _configure_diagnostic_limits(args: argparse.Namespace) -> None:
+    print("Diagnostic assessment enables evidence capture and the private review bundle.")
+    args.diagnostic_max_devices = _bounded_integer(
+        "Diagnostic maximum devices", args.diagnostic_max_devices, 1, 2000
+    )
+    args.diagnostic_axl_page_size = _positive_integer(
+        "Diagnostic AXL page size", args.diagnostic_axl_page_size
+    )
+    args.diagnostic_axl_max_records = _positive_integer(
+        "Diagnostic AXL maximum records", args.diagnostic_axl_max_records
+    )
+    args.diagnostic_cupi_max_records = _positive_integer(
+        "Diagnostic CUPI maximum records", args.diagnostic_cupi_max_records
     )
 
 

@@ -276,14 +276,14 @@ def run_assessment(
                 template=args.html_template,
             )
             status.ok(f"HTML report written: {html_report_path}")
-            if log_store:
+            if log_store or getattr(args, "include_customer_safe_report", False):
                 customer_safe_html_report_path = _write_html_report(
                     report,
                     str(_customer_safe_report_path(html_report_path)),
                     customer_safe=True,
                     template=args.html_template,
                 )
-                status.ok("Customer-safe HTML staged for the review ZIP")
+                status.ok(f"Customer-facing HTML report written: {customer_safe_html_report_path}")
         except OSError as exc:
             status.fail(f"Unable to write HTML report: {exc}")
 
@@ -490,14 +490,14 @@ def run_multi_assessment(
             template=args.html_template,
         )
         status.ok(f"HTML report written: {html_report_path}")
-        if log_store:
+        if log_store or getattr(args, "include_customer_safe_report", False):
             customer_safe_html_report_path = _write_html_report(
                 report,
                 str(_customer_safe_report_path(html_report_path)),
                 customer_safe=True,
                 template=args.html_template,
             )
-            status.ok("Customer-safe HTML staged for the review ZIP")
+            status.ok(f"Customer-facing HTML report written: {customer_safe_html_report_path}")
     summary_text = ExecutiveSummaryBuilder().build(
         report,
         str(html_report_path) if html_report_path else None,

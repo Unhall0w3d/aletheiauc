@@ -62,14 +62,24 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(template_action.choices, ("aletheiauc",))
 
-    def test_start_key_uses_recommended_diagnostic_and_review_options(self) -> None:
+    def test_run_modes_apply_only_their_explicit_requirements(self) -> None:
         args = cli.build_parser().parse_args([])
-        with patch("builtins.input", return_value="s"):
-            run_args = menu._prompt_run_mode(args)
+        args.html_template = "comsource"
+        args.customer_safe_report = True
+        standard = menu._run_args_for_mode(args, diagnostic=False)
+        diagnostic = menu._run_args_for_mode(args, diagnostic=True)
 
-        self.assertIsNotNone(run_args)
-        self.assertTrue(run_args.diagnostic_capture)
-        self.assertTrue(run_args.export_review_zip)
+        self.assertEqual(standard.html_template, "comsource")
+        self.assertFalse(standard.diagnostic_capture)
+        self.assertFalse(standard.export_review_zip)
+        self.assertTrue(standard.no_logs)
+        self.assertTrue(standard.no_artifacts)
+        self.assertFalse(standard.customer_safe_report)
+        self.assertTrue(standard.include_customer_safe_report)
+        self.assertTrue(diagnostic.diagnostic_capture)
+        self.assertTrue(diagnostic.export_review_zip)
+        self.assertFalse(diagnostic.no_logs)
+        self.assertFalse(diagnostic.no_artifacts)
 
     def test_no_arguments_opens_menu_and_can_quit(self) -> None:
         output = io.StringIO()
@@ -89,7 +99,7 @@ class CliTests(unittest.TestCase):
         with (
             patch("cisco_collab_health.cli.StatusPrinter._should_color", return_value=False),
             patch("cisco_collab_health.cli.sys.stdout", output),
-            patch("builtins.input", side_effect=["4", "s"]),
+            patch("builtins.input", side_effect=["5", "s"]),
             patch("cisco_collab_health.cli.run_assessment", return_value=0) as run_assessment,
         ):
             result = cli.main([])
@@ -103,7 +113,7 @@ class CliTests(unittest.TestCase):
         with (
             patch("cisco_collab_health.cli.StatusPrinter._should_color", return_value=False),
             patch("cisco_collab_health.cli.sys.stdout", output),
-            patch("builtins.input", side_effect=["1", "1,2", "n", ""]),
+            patch("builtins.input", side_effect=["1", "1", "1,2", "n", ""]),
             patch(
                 "cisco_collab_health.menu.load_profile_names",
                 return_value=["CallControl", "Voicemail"],
@@ -129,8 +139,11 @@ class CliTests(unittest.TestCase):
         targets = run_multi.call_args.args[3]
         self.assertEqual({target.technology for target, _runtime in targets}, {"cucm", "cuc"})
         run_args = run_multi.call_args.args[0]
-        self.assertTrue(run_args.diagnostic_capture)
-        self.assertTrue(run_args.export_review_zip)
+        self.assertFalse(run_args.diagnostic_capture)
+        self.assertFalse(run_args.export_review_zip)
+        self.assertTrue(run_args.no_logs)
+        self.assertTrue(run_args.no_artifacts)
+        self.assertTrue(run_args.include_customer_safe_report)
 
     def test_keyboard_interrupt_returns_130(self) -> None:
         with patch(
