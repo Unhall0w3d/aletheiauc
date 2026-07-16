@@ -1431,7 +1431,10 @@ class CucClusterRoleRule:
         primary = [item.name for item in runtime if item.details.get("server_state") == "Primary"]
         secondary = [item.name for item in runtime if item.details.get("server_state") == "Secondary"]
         failed = [item.name for item in runtime if item.details.get("server_state") == "Not Functioning"]
-        if failed or len(primary) > 1 or (len(runtime) > 1 and not primary):
+        transitional = [
+            state for state in states if state in {"Starting", "Replicating Data", "Split Brain Recovery"}
+        ]
+        if failed or len(primary) > 1 or (len(runtime) > 1 and not primary and not transitional):
             return [
                 HealthFinding(
                     rule_id=self.rule_id,
@@ -1448,7 +1451,6 @@ class CucClusterRoleRule:
                     evidence=[EvidenceRef(source="CUC.UCOS.CLI", operation="show_cuc_cluster_status", confidence="high")],
                 )
             ]
-        transitional = [state for state in states if state in {"Starting", "Replicating Data", "Split Brain Recovery"}]
         if transitional:
             return [_info_finding(
                 rule_id=self.rule_id,

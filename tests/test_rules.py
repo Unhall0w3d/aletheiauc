@@ -26,6 +26,7 @@ from cisco_collab_health.rules.basic import (
     CucInformixDialPlanRule,
     CucSmtpSecurityRule,
     CucmPlatformHealthRule,
+    CucmServicePolicyRule,
     CucmTopologyCompletenessRule,
     CucServicePolicyRule,
     DeviceInventorySummaryRule,
@@ -35,6 +36,7 @@ from cisco_collab_health.rules.basic import (
     NodeReachabilityRule,
     PlatformCheckSummaryRule,
     RegistrationSummaryRule,
+    RegistrationBalanceRule,
     ServiceSummaryRule,
     ServiceRuntimeRule,
     SipTrunkRuntimeRule,
@@ -241,6 +243,62 @@ class CucPlatformRulesTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
         self.assertIn("Connection Conversation Manager", findings[0].facts[0])
         self.assertNotIn("Connection Mailbox Sync", " ".join(findings[0].facts))
+
+    def test_cuc_service_policy_checks_singleton_services_only_on_primary(self) -> None:
+        findings = CucServicePolicyRule().evaluate(
+            AssessmentFacts(
+                configuration_objects=[
+                    ConfigurationObjectFact(
+                        "CucClusterRuntimeNode", "cuc-pub", {"server_state": "Primary"},
+                        "CUC.UCOS.CLI",
+                    ),
+                    ConfigurationObjectFact(
+                        "CucClusterRuntimeNode", "cuc-sub", {"server_state": "Secondary"},
+                        "CUC.UCOS.CLI",
+                    ),
+                ],
+                services=[
+                    *[
+                        ServiceStatusFact("cuc-pub", name, True, "Started", None, "CUC.UCOS.CLI")
+                        for name in CucServicePolicyRule.required_services
+                    ],
+                    *[
+                        ServiceStatusFact("cuc-sub", name, True, "Started", None, "CUC.UCOS.CLI")
+                        for name in CucServicePolicyRule.required_services
+                    ],
+                    ServiceStatusFact(
+                        "cuc-pub", "Connection Notifier", True, "Stopped", None, "CUC.UCOS.CLI"
+                    ),
+                    ServiceStatusFact(
+                        "cuc-pub", "Connection Message Transfer Agent", True, "Started", None,
+                        "CUC.UCOS.CLI",
+                    ),
+                ],
+            )
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertIn("cuc-pub: Connection Notifier", findings[0].facts[0])
+        self.assertNotIn("cuc-sub: Connection Notifier", " ".join(findings[0].facts))
+
+    def test_cuc_cluster_role_rule_reports_transitional_state_as_information(self) -> None:
+        findings = CucClusterRoleRule().evaluate(
+            AssessmentFacts(
+                configuration_objects=[
+                    ConfigurationObjectFact(
+                        "CucClusterRuntimeNode", "cuc-pub", {"server_state": "Starting"},
+                        "CUC.UCOS.CLI",
+                    ),
+                    ConfigurationObjectFact(
+                        "CucClusterRuntimeNode", "cuc-sub", {"server_state": "Secondary"},
+                        "CUC.UCOS.CLI",
+                    ),
+                ]
+            )
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, FindingSeverity.INFO)
 
     def test_cucm_platform_rule_flags_unsynced_ntp_and_replication(self) -> None:
         findings = CucmPlatformHealthRule().evaluate(
@@ -497,6 +555,79 @@ class ServiceRuntimeRuleTests(unittest.TestCase):
         findings = ServiceRuntimeRule().evaluate(facts)
 
         self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
+
+
+class CucmServicePolicyRuleTests(unittest.TestCase):
+    def test_missing_tftp_and_stopped_call_processing_dependency_are_actionable(self) -> None:
+        findings = CucmServicePolicyRule().evaluate(
+            AssessmentFacts(
+                services=[
+                    ServiceStatusFact(
+                        "cucm-pub", "Cisco CallManager", True, "Started", None, "CUCM.UCOS.CLI"
+                    ),
+                    ServiceStatusFact(
+                        "cucm-pub", "Cisco RIS Data Collector", True, "Stopped", None,
+                        "CUCM.UCOS.CLI",
+                    ),
+                    ServiceStatusFact(
+                        "cucm-pub", "Cisco Database Layer Monitor", False, "Stopped", None,
+                        "CUCM.UCOS.CLI",
+                    ),
+                ]
+            )
+        )
+
+        self.assertEqual(len(findings), 2)
+        self.assertTrue(findings[0].rule_id.endswith("tftp_unavailable"))
+        self.assertIn("cucm-pub: Cisco RIS Data Collector", findings[1].facts)
+        self.assertIn("cucm-pub: Cisco Database Layer Monitor", findings[1].facts)
+
+
+class RegistrationBalanceRuleTests(unittest.TestCase):
+    def test_balanced_subscriber_registration_does_not_create_advisory(self) -> None:
+        facts = AssessmentFacts(
+            registrations=[
+                *[
+                    DeviceRegistrationFact(
+                        f"SEPsub1{number}", "Registered", "cucm-sub-1", None, "Cisco 8841", "SIP", "RISPort70"
+                    )
+                    for number in range(10)
+                ],
+                *[
+                    DeviceRegistrationFact(
+                        f"SEPsub2{number}", "Registered", "cucm-sub-2", None, "Cisco 8841", "SIP", "RISPort70"
+                    )
+                    for number in range(10)
+                ],
+            ]
+        )
+
+        self.assertEqual(RegistrationBalanceRule().evaluate(facts), [])
+
+    def test_skew_and_publisher_registrations_create_advisory(self) -> None:
+        facts = AssessmentFacts(
+            nodes=[CollaborationNode("cucm-pub", "10.0.0.1", "publisher")],
+            registrations=[
+                *[
+                    DeviceRegistrationFact(
+                        f"SEPpub{number}", "Registered", "cucm-pub", None, "Cisco 8841", "SIP", "RISPort70"
+                    )
+                    for number in range(2)
+                ],
+                *[
+                    DeviceRegistrationFact(
+                        f"SEPsub{number}", "Registered", "cucm-sub", None, "Cisco 8841", "SIP", "RISPort70"
+                    )
+                    for number in range(20)
+                ],
+            ],
+        )
+
+        findings = RegistrationBalanceRule().evaluate(facts)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, FindingSeverity.INFO)
+        self.assertIn("Publisher registrations observed: 2", findings[0].facts)
 
 
 class NodeReachabilityRuleTests(unittest.TestCase):

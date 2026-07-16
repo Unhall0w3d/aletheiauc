@@ -135,6 +135,35 @@ class ReportBuilderTests(unittest.TestCase):
 
         self.assertIn("Unity Connection Cluster Role and Replication", HtmlReportBuilder().build(report))
 
+    def test_html_report_renders_phone_registration_distribution_visual(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                nodes=[CollaborationNode("cucm-pub", "10.0.0.1", "publisher")],
+                registrations=[
+                    *[
+                        DeviceRegistrationFact(
+                            f"SEPpub{number}", "Registered", "cucm-pub", None, "Cisco 8841", "SIP", "fixture"
+                        )
+                        for number in range(2)
+                    ],
+                    *[
+                        DeviceRegistrationFact(
+                            f"SEPsub{number}", "Registered", "cucm-sub", None, "Cisco 8841", "SIP", "fixture"
+                        )
+                        for number in range(20)
+                    ],
+                ],
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        payload = HtmlReportBuilder().build(report)
+
+        self.assertIn("Phone Registration Distribution", payload)
+        self.assertIn("registration-balance-track", payload)
+        self.assertIn("CUCM Group and Device Pool review", payload)
+
     def setUp(self) -> None:
         self.report = AssessmentEngine(
             collectors=[SampleCollector()],
