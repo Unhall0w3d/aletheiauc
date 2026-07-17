@@ -12,20 +12,22 @@ from cisco_collab_health.collectors.diagnostic import (
     _parse_risport_registrations,
     _parse_service_catalog,
     _parse_service_status,
+    select_endpoint_web_sample,
     parse_certificate_snapshot,
 )
 from cisco_collab_health.models.runtime import CollectionContext
+from cisco_collab_health.models.facts import AssessmentFacts
 from cisco_collab_health.transport.http import CapturedHttpResponse
 from cisco_collab_health.transport.soap import SoapResponse
 
 
 class FakeHttpClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str]] = []
+        self.calls: list[tuple[str, str, str, str]] = []
 
-    def get(self, endpoint, context, *, node, interface, operation):
+    def get(self, endpoint, context, *, node, interface, operation, credential_kind="gui"):
         del context
-        self.calls.append((node, interface, endpoint))
+        self.calls.append((node, interface, endpoint, credential_kind))
         return CapturedHttpResponse(
             200,
             "OK",
@@ -58,6 +60,51 @@ class FakeSoapClient:
 
 
 class DiagnosticCaptureCollectorTests(unittest.TestCase):
+    def test_endpoint_sample_is_deterministic_and_spans_runtime_strata(self) -> None:
+        registrations = _parse_risport_registrations(
+            """<root><CmNodes><item><Name>cucm-sub1</Name><CmDevices>
+            <item><Name>SEP-A</Name><Status>Registered</Status><IPAddress><item><IP>192.0.2.11</IP></item></IPAddress><Model>Cisco 8841</Model><ActiveLoadID>load-a</ActiveLoadID></item>
+            <item><Name>SEP-B</Name><Status>Registered</Status><IPAddress><item><IP>192.0.2.12</IP></item></IPAddress><Model>Cisco 8841</Model><ActiveLoadID>load-b</ActiveLoadID></item>
+            <item><Name>SEP-C</Name><Status>Registered</Status><IPAddress><item><IP>192.0.2.13</IP></item></IPAddress><Model>Cisco 8851</Model><ActiveLoadID>load-a</ActiveLoadID></item>
+            </CmDevices></item></CmNodes></root>"""
+        )
+
+        sample = select_endpoint_web_sample(registrations, 2)
+
+        self.assertEqual([item.name for item in sample], ["SEP-A", "SEP-B"])
+
+    def test_endpoint_web_sample_uses_registered_ris_addresses_without_credentials(self) -> None:
+        client = FakeHttpClient()
+        collector = DiagnosticCaptureCollector(("risport70",), http_client=client)
+        facts = AssessmentFacts(registrations=_parse_risport_registrations(
+            """<root><CmNodes><item><Name>cucm-pub</Name><CmDevices>
+            <item><Name>SEP-A</Name><Status>Registered</Status><IPAddress><item><IP>192.0.2.11</IP></item></IPAddress><Model>Cisco 8841</Model></item>
+            <item><Name>SIPTRUNK-A</Name><Status>Registered</Status><IPAddress><item><IP>192.0.2.12</IP></item></IPAddress><DeviceClass>SIPTrunk</DeviceClass></item>
+            </CmDevices></item></CmNodes></root>"""
+        ))
+        evidence = []
+        warnings = []
+        notes = []
+
+        collector._capture_endpoint_web_sample(
+            CollectionContext(
+                publisher_ip="192.0.2.10",
+                endpoint_web_sample=True,
+                endpoint_web_sample_size=4,
+                endpoint_web_timeout_seconds=2,
+            ),
+            facts,
+            evidence,
+            warnings,
+            notes,
+        )
+
+        self.assertEqual(client.calls, [("192.0.2.11", "endpoint_https", "https://192.0.2.11/", "none")])
+        self.assertEqual(len(evidence), 1)
+        coverage = next(item for item in facts.platform_checks if item.check_name.endswith("coverage"))
+        self.assertEqual(coverage.details["eligible_registered_endpoints"], "1")
+        self.assertEqual(coverage.details["reachable"], "1")
+
     def test_certificate_snapshot_normalizes_expiry_signing_and_chain(self) -> None:
         payload = """{"certificates":[
           {"certificateName":"Root CA","service":"tomcat-trust","subject":"CN=Root",

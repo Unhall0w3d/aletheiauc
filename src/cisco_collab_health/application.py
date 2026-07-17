@@ -116,6 +116,9 @@ def run_assessment(
         diagnostic_axl_page_size=args.diagnostic_axl_page_size,
         diagnostic_axl_max_records=args.diagnostic_axl_max_records,
         diagnostic_cupi_max_records=args.diagnostic_cupi_max_records,
+        endpoint_web_sample=args.endpoint_web_sample,
+        endpoint_web_sample_size=args.endpoint_web_sample_size,
+        endpoint_web_timeout_seconds=args.endpoint_web_timeout_seconds,
     )
     run_started = datetime.now()
     artifact_store: ArtifactStore | None = None
@@ -157,6 +160,9 @@ def run_assessment(
             diagnostic_axl_page_size=args.diagnostic_axl_page_size,
             diagnostic_axl_max_records=args.diagnostic_axl_max_records,
             diagnostic_cupi_max_records=args.diagnostic_cupi_max_records,
+            endpoint_web_sample=args.endpoint_web_sample,
+            endpoint_web_sample_size=args.endpoint_web_sample_size,
+            endpoint_web_timeout_seconds=args.endpoint_web_timeout_seconds,
             tls=tls_policy,
             accept_new_host_key=host_key_enrollment,
             host_key_approval=host_key_approval,
@@ -249,6 +255,7 @@ def run_assessment(
             "phone_inventory_enabled": context.collect_phone_inventory
             or context.diagnostic_capture,
             "diagnostic_capture": context.diagnostic_capture,
+            "endpoint_web_sample": context.endpoint_web_sample,
             "customer_safe_report": args.customer_safe_report,
         },
     )
@@ -391,6 +398,9 @@ def run_multi_assessment(
             diagnostic_axl_page_size=args.diagnostic_axl_page_size,
             diagnostic_axl_max_records=args.diagnostic_axl_max_records,
             diagnostic_cupi_max_records=args.diagnostic_cupi_max_records,
+            endpoint_web_sample=args.endpoint_web_sample,
+            endpoint_web_sample_size=args.endpoint_web_sample_size,
+            endpoint_web_timeout_seconds=args.endpoint_web_timeout_seconds,
             tls=tls_policy,
             artifact_store=artifact_store,
             accept_new_host_key=host_key_enrollment,

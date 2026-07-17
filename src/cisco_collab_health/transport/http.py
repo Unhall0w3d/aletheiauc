@@ -130,6 +130,8 @@ class CapturedHttpClient:
         return CapturedHttpResponse(status, reason, body, response_path)
 
     def _auth_headers(self, context: CollectionContext, credential_kind: str) -> dict[str, str]:
+        if credential_kind == "none":
+            return {}
         username = context.os_username if credential_kind == "os" else context.gui_username
         password = context.os_password if credential_kind == "os" else context.gui_password
         if not username or not password:

@@ -12,6 +12,13 @@ Reports describe only checks AletheiaUC actually performs and evidence it
 actually collects. A configured feature is not described as tested unless its
 result was collected as assessment evidence.
 
+The optional CUCM endpoint HTTPS sample is disabled by default. It uses the
+already collected RIS runtime snapshot to select a bounded, deterministic sample
+across endpoint model, registration node, and active firmware strata. Each probe
+performs an unauthenticated HTTPS `GET /` with a configured per-endpoint timeout;
+CUCM credentials are never sent to endpoint addresses. An unobserved endpoint is
+reported as sample evidence only, not as an endpoint-health, ITL, or TVS failure.
+
 The normal CUC CUPI pass records only bounded inventory counts for mailboxes
 and unified-messaging services. Diagnostic capture uses GET only and caps each
 reviewed configuration resource at 500 records (or the lower configured AXL

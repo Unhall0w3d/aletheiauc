@@ -25,6 +25,7 @@ from cisco_collab_health.models.facts import (
     CertificateFact,
     DeviceRegistrationFact,
     PerfCounterFact,
+    PlatformCheckFact,
     ServiceStatusFact,
 )
 from cisco_collab_health.models.runtime import CollectionContext
@@ -329,6 +330,8 @@ class DiagnosticCaptureCollector:
 
         if "risport70" in self.available_interfaces:
             self._capture_risport(context, facts, evidence, warnings)
+        if context.endpoint_web_sample:
+            self._capture_endpoint_web_sample(context, facts, evidence, warnings, notes)
         if "control_center" in self.available_interfaces:
             self._capture_control_center(context, nodes, facts, evidence, warnings)
         if "perfmon" in self.available_interfaces:
@@ -546,6 +549,99 @@ class DiagnosticCaptureCollector:
                     )
                 )
 
+    def _capture_endpoint_web_sample(
+        self,
+        context: CollectionContext,
+        facts: AssessmentFacts,
+        evidence: list[EvidenceRef],
+        warnings: list[str],
+        notes: list[str],
+    ) -> None:
+        """Perform an explicitly enabled, bounded HTTPS reachability sample.
+
+        The probe deliberately sends no CUCM credentials and only requests the endpoint root
+        page. It establishes whether the currently registered address responds over HTTPS; it
+        does not infer ITL, TVS, or device health from an unsuccessful response.
+        """
+
+        eligible = _endpoint_web_candidates(facts.registrations)
+        selected = select_endpoint_web_sample(eligible, context.endpoint_web_sample_size)
+        reachable = 0
+        for registration in selected:
+            assert registration.ip_address is not None
+            endpoint = f"https://{registration.ip_address}/"
+            probe_context = replace(
+                context, timeout_seconds=context.endpoint_web_timeout_seconds
+            )
+            details = {
+                "address": registration.ip_address,
+                "model": registration.model or registration.runtime_model_code or "Unknown",
+                "registered_node": registration.registered_node or "Unknown",
+                "active_load": registration.active_load or "Unknown",
+            }
+            try:
+                response = self.http_client.get(
+                    endpoint,
+                    probe_context,
+                    node=registration.ip_address,
+                    interface="endpoint_https",
+                    operation="root_page",
+                    credential_kind="none",
+                )
+            except CapturedHttpError as exc:
+                if exc.status in {401, 403}:
+                    status = "reachable_authentication_required"
+                    reachable += 1
+                else:
+                    status = "not_observed"
+                    warnings.append(
+                        f"Endpoint HTTPS sample {registration.name} ({registration.ip_address}) "
+                        f"was not observed: {exc}"
+                    )
+                details["result"] = str(exc)
+            else:
+                status = "reachable"
+                reachable += 1
+                details["http_status"] = str(response.status)
+                evidence.append(
+                    EvidenceRef(
+                        source="EndpointHTTPS",
+                        operation="root_page",
+                        node=registration.ip_address,
+                        artifact_path=response.response_artifact_path,
+                        parser="endpoint_https_reachability",
+                        confidence="high",
+                    )
+                )
+            facts.platform_checks.append(
+                PlatformCheckFact(
+                    node=registration.name,
+                    check_name="endpoint_https_sample",
+                    status=status,
+                    details=details,
+                    source="CUCM.Endpoint.HTTPS.Sample",
+                )
+            )
+        facts.platform_checks.append(
+            PlatformCheckFact(
+                node=context.publisher_ip or "CUCM Publisher",
+                check_name="endpoint_https_sample_coverage",
+                status="collected",
+                details={
+                    "eligible_registered_endpoints": str(len(eligible)),
+                    "sampled": str(len(selected)),
+                    "reachable": str(reachable),
+                    "not_observed": str(len(selected) - reachable),
+                    "sample_limit": str(context.endpoint_web_sample_size),
+                },
+                source="CUCM.Endpoint.HTTPS.Sample",
+            )
+        )
+        notes.append(
+            "Optional endpoint HTTPS sample selected "
+            f"{len(selected)} of {len(eligible)} eligible registered runtime endpoints."
+        )
+
     def _capture_control_center(
         self,
         context: CollectionContext,
@@ -709,6 +805,68 @@ def _soap_evidence(response: SoapResponse, node: str) -> EvidenceRef:
 
 def _safe_operation(value: str) -> str:
     return "_".join(value.lower().split())
+
+
+def _endpoint_web_candidates(
+    registrations: Iterable[DeviceRegistrationFact],
+) -> list[DeviceRegistrationFact]:
+    """Return unique-address, currently registered endpoint candidates from RIS data."""
+
+    excluded = ("trunk", "gateway", "route", "cti", "media resource")
+    candidates = []
+    seen_addresses: set[str] = set()
+    for item in registrations:
+        address = (item.ip_address or "").strip()
+        descriptor = " ".join(
+            filter(None, (item.device_class, item.model, item.name))
+        ).casefold()
+        if (
+            item.status.strip().casefold() != "registered"
+            or not address
+            or any(marker in descriptor for marker in excluded)
+            or address in seen_addresses
+        ):
+            continue
+        seen_addresses.add(address)
+        candidates.append(item)
+    return candidates
+
+
+def select_endpoint_web_sample(
+    registrations: Iterable[DeviceRegistrationFact], limit: int
+) -> list[DeviceRegistrationFact]:
+    """Deterministically spread a bounded sample across model, node, and firmware strata."""
+
+    ordered = sorted(
+        registrations,
+        key=lambda item: (
+            (item.model or item.runtime_model_code or "").casefold(),
+            (item.registered_node or "").casefold(),
+            (item.active_load or "").casefold(),
+            item.name.casefold(),
+            (item.ip_address or "").casefold(),
+        ),
+    )
+    sample: list[DeviceRegistrationFact] = []
+    represented: set[tuple[str, str, str]] = set()
+    for item in ordered:
+        stratum = (
+            (item.model or item.runtime_model_code or "Unknown").casefold(),
+            (item.registered_node or "Unknown").casefold(),
+            (item.active_load or "Unknown").casefold(),
+        )
+        if stratum in represented:
+            continue
+        sample.append(item)
+        represented.add(stratum)
+        if len(sample) >= limit:
+            return sample
+    for item in ordered:
+        if item not in sample:
+            sample.append(item)
+        if len(sample) >= limit:
+            break
+    return sample
 
 
 def _parse_risport_registrations(

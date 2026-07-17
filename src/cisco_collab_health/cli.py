@@ -221,6 +221,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=2000,
         help="Maximum records retained per diagnostic CUPI configuration resource.",
     )
+    parser.add_argument(
+        "--endpoint-web-sample",
+        action="store_true",
+        help="Opt in to a bounded, read-only HTTPS reachability sample of registered phone web interfaces.",
+    )
+    parser.add_argument(
+        "--endpoint-web-sample-size",
+        type=int,
+        default=12,
+        help="Maximum registered endpoints selected for the optional HTTPS sample.",
+    )
+    parser.add_argument(
+        "--endpoint-web-timeout-seconds",
+        type=int,
+        default=5,
+        help="Per-endpoint timeout for the optional HTTPS sample.",
+    )
     tls_group = parser.add_mutually_exclusive_group()
     tls_group.add_argument(
         "--verify-tls",
@@ -304,6 +321,12 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.error("--diagnostic-axl-max-records must be at least 1")
     if args.diagnostic_cupi_max_records < 1:
         parser.error("--diagnostic-cupi-max-records must be at least 1")
+    if args.endpoint_web_sample_size < 1:
+        parser.error("--endpoint-web-sample-size must be at least 1")
+    if args.endpoint_web_timeout_seconds < 1:
+        parser.error("--endpoint-web-timeout-seconds must be at least 1")
+    if args.endpoint_web_sample and not args.diagnostic_capture:
+        parser.error("--endpoint-web-sample requires --diagnostic-capture")
 
 
 def _run(args: argparse.Namespace, status: StatusPrinter) -> int:

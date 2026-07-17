@@ -51,5 +51,8 @@ class CollectionContext:
     diagnostic_axl_page_size: int = 250
     diagnostic_axl_max_records: int = 500
     diagnostic_cupi_max_records: int = 2000
+    endpoint_web_sample: bool = False
+    endpoint_web_sample_size: int = 12
+    endpoint_web_timeout_seconds: int = 5
     discovered_nodes: tuple[str, ...] = ()
     discovered_device_names: tuple[str, ...] = ()

@@ -56,6 +56,49 @@ from cisco_collab_health.rules.basic import ClusterIdentityRule, NodeReachabilit
 
 
 class ReportBuilderTests(unittest.TestCase):
+    def test_endpoint_https_sample_reports_coverage_without_a_health_verdict(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(
+                nodes=[CollaborationNode("cucm-pub", "192.0.2.10", "publisher")],
+                platform_checks=[
+                    PlatformCheckFact(
+                        "cucm-pub",
+                        "endpoint_https_sample_coverage",
+                        "collected",
+                        {
+                            "eligible_registered_endpoints": "40",
+                            "sampled": "12",
+                            "reachable": "10",
+                            "not_observed": "2",
+                        },
+                        "CUCM.Endpoint.HTTPS.Sample",
+                    ),
+                    PlatformCheckFact(
+                        "SEP001",
+                        "endpoint_https_sample",
+                        "reachable",
+                        {
+                            "address": "192.0.2.101",
+                            "model": "Cisco 8841",
+                            "registered_node": "cucm-pub",
+                        },
+                        "CUCM.Endpoint.HTTPS.Sample",
+                    ),
+                ],
+            ),
+            collector_results=[],
+            findings=[],
+        )
+
+        customer = HtmlReportBuilder(customer_safe=True).build(report)
+        engineering = HtmlReportBuilder().build(report)
+
+        self.assertIn("Endpoint HTTPS Reachability Sample", customer)
+        self.assertIn("Eligible registered endpoints", customer)
+        self.assertIn("SEP001", customer)
+        self.assertIn("web-interface reachability only", customer)
+        self.assertIn("Source: optional unauthenticated HTTPS GET", engineering)
+
     def test_html_report_renders_cluster_software_consistency(self) -> None:
         report = AssessmentReport(
             facts=AssessmentFacts(

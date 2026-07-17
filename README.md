@@ -352,6 +352,20 @@ read-only interface evidence for future parser and collector development:
 ./aletheiauc.py --diagnostic-capture
 ```
 
+An optional endpoint web-interface sample can be added to a diagnostic run:
+
+```bash
+./aletheiauc.py --diagnostic-capture --endpoint-web-sample \
+  --endpoint-web-sample-size 12 --endpoint-web-timeout-seconds 5
+```
+
+The sample is disabled by default and is also available under **Settings →
+Collection**. AletheiaUC selects currently registered RIS endpoints
+deterministically across model, registration node, and active firmware groups.
+It makes an unauthenticated HTTPS `GET /` only; it does not send CUCM
+credentials to endpoint addresses. The report presents sampling coverage and
+reachability as evidence, not as an ITL/TVS or endpoint-health verdict.
+
 Diagnostic capture automatically includes the bounded AXL phone inventory and
 adds raw request/response evidence for:
 
@@ -359,6 +373,8 @@ adds raw request/response evidence for:
 - Per-node `/platformcom/api/v1/certmgr/config/snapshot/server` certificate metadata
 - RISPort70 `selectCmDeviceExt` registration snapshot using the AXL device list
   (or a bounded wildcard `selectCmDevice` fallback if AXL inventory is unavailable)
+- When explicitly enabled, a bounded unauthenticated HTTPS reachability sample
+  of registered endpoint web interfaces; raw responses remain private diagnostic evidence
 - Control Center `getProductInformationList` and `soapGetServiceStatus` on every discovered node
 - PerfMon object/counter discovery plus two samples of `Processor`, `Memory`, and `Cisco CallManager` counters on every discovered node
 - Bounded AXL configuration discovery for call-manager groups, regions, locations,

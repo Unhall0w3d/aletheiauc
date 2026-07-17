@@ -235,7 +235,8 @@ def _settings_summary(args: argparse.Namespace) -> str:
     tls_mode = "verify TLS" if args.verify_tls else "allow self-signed TLS"
     return (
         f"Current settings: template={args.html_template} | {tls_mode} | "
-        f"SSH workers={args.ssh_parallel_workers}"
+        f"SSH workers={args.ssh_parallel_workers} | "
+        f"endpoint HTTPS sample={'on' if args.endpoint_web_sample else 'off'}"
     )
 
 
@@ -252,6 +253,12 @@ def _confirm_run(
     print(f"TLS verification: {'enabled' if args.verify_tls else 'disabled'}")
     if diagnostic:
         print("Bundle: artifacts, logs, and private review ZIP")
+        if args.endpoint_web_sample:
+            print(
+                "Endpoint HTTPS sample: enabled "
+                f"({args.endpoint_web_sample_size} registered endpoints, "
+                f"{args.endpoint_web_timeout_seconds}s each)"
+            )
     return _yes_no("Start this assessment?", default=True)
 
 
@@ -560,6 +567,17 @@ def _configure_collection(args: argparse.Namespace) -> None:
     args.ssh_parallel_workers = _positive_integer(
         "Independent UCOS SSH node workers", args.ssh_parallel_workers
     )
+    args.endpoint_web_sample = _yes_no(
+        "Run optional HTTPS web-interface sample against registered endpoints during diagnostic assessments?",
+        default=args.endpoint_web_sample,
+    )
+    if args.endpoint_web_sample:
+        args.endpoint_web_sample_size = _positive_integer(
+            "Endpoint HTTPS sample size", args.endpoint_web_sample_size
+        )
+        args.endpoint_web_timeout_seconds = _positive_integer(
+            "Endpoint HTTPS timeout seconds", args.endpoint_web_timeout_seconds
+        )
 
 
 def _configure_diagnostic_limits(args: argparse.Namespace) -> None:

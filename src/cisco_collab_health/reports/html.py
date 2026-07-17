@@ -432,6 +432,7 @@ class HtmlReportBuilder:
         registration_summary_rows = self._registration_summary_rows(report)
         registration_balance_section = self._registration_balance_section(report)
         endpoint_runtime_coverage_section = self._endpoint_runtime_coverage_section(report)
+        endpoint_web_sample_section = self._endpoint_web_sample_section(report)
         call_manager_runtime_resources_section = self._call_manager_runtime_resources_section(
             report
         )
@@ -978,6 +979,7 @@ class HtmlReportBuilder:
     </section>
     {registration_balance_section}
     {endpoint_runtime_coverage_section}
+    {endpoint_web_sample_section}
     {call_manager_runtime_resources_section}
     <section>
       <h2>Device Load Summary</h2>
@@ -2478,6 +2480,64 @@ class HtmlReportBuilder:
           <tbody>{detail_rows}</tbody>
         </table></div>
       </details>
+    </section>
+"""
+
+    def _endpoint_web_sample_section(self, report: AssessmentReport) -> str:
+        """Render optional endpoint HTTPS sample results without treating them as health verdicts."""
+
+        checks = [
+            item
+            for item in report.facts.platform_checks
+            if item.source == "CUCM.Endpoint.HTTPS.Sample"
+        ]
+        coverage = next(
+            (item for item in checks if item.check_name == "endpoint_https_sample_coverage"),
+            None,
+        )
+        endpoints = [item for item in checks if item.check_name == "endpoint_https_sample"]
+        if coverage is None:
+            return ""
+        details = coverage.details
+        description = (
+            "Source: optional unauthenticated HTTPS GET to the root page of a deterministic sample "
+            "of currently registered endpoint addresses. This is reachability evidence only; an "
+            "unobserved response can be intentional when phone web access is disabled."
+            if not self.customer_safe
+            else "A small representative sample of currently registered endpoint addresses was checked "
+            "over HTTPS. This confirms web-interface reachability only; an unobserved response can be "
+            "intentional when phone web access is disabled."
+        )
+        rows = "".join(
+            "<tr>"
+            f"<td>{escape(item.node)}</td>"
+            f"<td>{escape(display_text(item.details.get('address')))}</td>"
+            f"<td>{escape(display_text(item.details.get('model')))}</td>"
+            f"<td>{escape(display_text(item.details.get('registered_node')))}</td>"
+            f"<td>{escape(item.status.replace('_', ' '))}</td>"
+            "</tr>"
+            for item in sorted(
+                endpoints,
+                key=lambda item: (
+                    self._node_reference_sort_key(report, item.details.get("registered_node")),
+                    _natural_sort_key(item.node),
+                ),
+            )
+        ) or '<tr><td colspan="5">No eligible registered endpoint addresses were available.</td></tr>'
+        return f"""
+    <section>
+      <h2>Endpoint HTTPS Reachability Sample</h2>
+      <p class="meta">{escape(description)}</p>
+      <table><tbody>
+        <tr><th>Eligible registered endpoints</th><td>{escape(display_text(details.get('eligible_registered_endpoints')))}</td></tr>
+        <tr><th>Endpoints sampled</th><td>{escape(display_text(details.get('sampled')))}</td></tr>
+        <tr><th>HTTPS reachable</th><td>{escape(display_text(details.get('reachable')))}</td></tr>
+        <tr><th>Not observed</th><td>{escape(display_text(details.get('not_observed')))}</td></tr>
+      </tbody></table>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Endpoint</th><th>Address</th><th>Model</th><th>Registered Node</th><th>Result</th></tr></thead>
+        <tbody>{rows}</tbody>
+      </table></div>
     </section>
 """
 
