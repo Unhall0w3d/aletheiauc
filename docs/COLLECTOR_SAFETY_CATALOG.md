@@ -116,6 +116,11 @@ database-replication runtime state, active core files, and service list. The
 collector retains raw output and only promotes conservative NTP, DRS,
 replication, and core-file conditions into findings. Fresh CUCM artifacts remain
 required to validate output variants and thresholds before expanding this pilot.
+For DRS backup history, ISO and U.S.-style dates are considered only on rows
+that explicitly report success. AletheiaUC does not infer dates from failed,
+ambiguous, or unrecognized localized rows; those remain available only as
+private raw evidence. A clearly parsed newest success older than three days is
+reported as a recovery-readiness warning.
 
 CUC first obtains its bounded `show network cluster` listing from the publisher,
 then applies its read-only platform catalog to each discovered cluster member.

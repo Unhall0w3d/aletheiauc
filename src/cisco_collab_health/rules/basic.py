@@ -1152,6 +1152,30 @@ class CucmPlatformHealthRule:
                     "Review the DRS schedule, destination, and most recent job result; run or repair a backup if needed.",
                 )
             )
+        stale_backups = [
+            check
+            for check in checks
+            if check.check_name == "utils disaster_recovery history backup"
+            and check.details.get("latest_successful_backup_age_days", "").isdigit()
+            and int(check.details["latest_successful_backup_age_days"]) > 3
+        ]
+        if stale_backups:
+            findings.append(
+                _cucm_cli_finding(
+                    "backup_recency",
+                    FindingSeverity.WARNING,
+                    "Latest successful CUCM backup is more than three days old",
+                    [
+                        f"{check.node}: {check.details['latest_successful_backup']} "
+                        f"({check.details['latest_successful_backup_age_days']} days ago)"
+                        for check in sorted(stale_backups, key=lambda check: check.node)
+                    ],
+                    "A recoverable configuration baseline cannot be assumed when the latest "
+                    "successful DRS backup is stale.",
+                    "Review the DRS schedule, destination, and latest job result; complete and "
+                    "verify a current backup before relying on recovery readiness.",
+                )
+            )
         replication = [
             check
             for check in checks

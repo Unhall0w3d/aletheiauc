@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Protocol
 
 from cisco_collab_health.collectors.base import CollectionResult
@@ -153,7 +154,18 @@ def _summary(command: str, output: str) -> dict[str, str]:
     if command.startswith("utils disaster_recovery"):
         successes = re.findall(r"\bSUCCESS\b", output, re.I)
         unavailable = bool(re.search(r"master agent.*(?:down|processing)|network request timed out|error occurred", output, re.I))
-        return {"successful_backup_entries": str(len(successes)), "drs_unavailable": str(unavailable).lower()}
+        summary = {
+            "successful_backup_entries": str(len(successes)),
+            "drs_unavailable": str(unavailable).lower(),
+        }
+        if command == "utils disaster_recovery history backup":
+            latest = _latest_successful_backup(output)
+            if latest is not None:
+                summary["latest_successful_backup"] = latest.date().isoformat()
+                summary["latest_successful_backup_age_days"] = str(
+                    max(0, (datetime.now(UTC).date() - latest.date()).days)
+                )
+        return summary
     if command == "utils dbreplication runtimestate":
         rows = re.findall(r"(?m)^\S+\s+\d{1,3}(?:\.\d{1,3}){3}.*$", output)
         bad = [
@@ -169,6 +181,35 @@ def _summary(command: str, output: str) -> dict[str, str]:
     if command == "show version inactive":
         return version_summary(output, active=False)
     return {}
+
+
+def _latest_successful_backup(output: str) -> datetime | None:
+    """Parse an unambiguous successful-backup date from common DRS history rows.
+
+    The collector intentionally does not infer a date from a failed row or an
+    unknown localized format. Raw command output remains available for review.
+    """
+
+    candidates: list[datetime] = []
+    for line in output.splitlines():
+        if not re.search(r"\bSUCCESS\b", line, re.I):
+            continue
+        iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2}))?\b", line)
+        if iso:
+            value = f"{iso.group(1)} {iso.group(2) or '00:00:00'}"
+            try:
+                candidates.append(datetime.strptime(value, "%Y-%m-%d %H:%M:%S"))
+            except ValueError:
+                pass
+            continue
+        us = re.search(r"\b(\d{1,2}/\d{1,2}/20\d{2})(?:\s+(\d{2}:\d{2}:\d{2}))?\b", line)
+        if us:
+            value = f"{us.group(1)} {us.group(2) or '00:00:00'}"
+            try:
+                candidates.append(datetime.strptime(value, "%m/%d/%Y %H:%M:%S"))
+            except ValueError:
+                pass
+    return max(candidates) if candidates else None
 
 
 def _cucm_service_status(node: str, output: str) -> list[ServiceStatusFact]:

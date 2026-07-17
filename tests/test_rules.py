@@ -343,6 +343,30 @@ class CucPlatformRulesTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, FindingSeverity.CRITICAL)
         self.assertIn("cucm-sub: 99% common/logging", findings[0].facts[0])
 
+    def test_cucm_platform_rule_flags_stale_unambiguous_backup(self) -> None:
+        findings = CucmPlatformHealthRule().evaluate(
+            AssessmentFacts(
+                platform_checks=[
+                    PlatformCheckFact(
+                        "cucm-pub",
+                        "utils disaster_recovery history backup",
+                        "collected",
+                        {
+                            "successful_backup_entries": "4",
+                            "latest_successful_backup": "2026-07-10",
+                            "latest_successful_backup_age_days": "6",
+                        },
+                        "CUCM.UCOS.CLI",
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].rule_id, "cucm.platform_health.backup_recency")
+        self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
+        self.assertIn("cucm-pub: 2026-07-10 (6 days ago)", findings[0].facts)
+
 
 class CucInformixDialPlanRuleTests(unittest.TestCase):
     def test_duplicate_extensions_and_transfer_paths_are_assessed(self) -> None:

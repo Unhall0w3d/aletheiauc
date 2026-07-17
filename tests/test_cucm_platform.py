@@ -54,6 +54,17 @@ class CucmPlatformSummaryTests(unittest.TestCase):
         self.assertEqual(disk["active_partition_usage_percent"], "5")
         self.assertEqual(disk["common_partition_usage_percent"], "92")
 
+    def test_drs_history_summary_keeps_only_an_unambiguous_success_date(self) -> None:
+        history = _summary(
+            "utils disaster_recovery history backup",
+            "2025-01-01 01:02:03 FAILED\n"
+            "2025-01-03 04:05:06 SUCCESS\n",
+        )
+
+        self.assertEqual(history["successful_backup_entries"], "1")
+        self.assertEqual(history["latest_successful_backup"], "2025-01-03")
+        self.assertIn("latest_successful_backup_age_days", history)
+
     def test_collection_reuses_preflighted_node_context_without_opening_a_second_preflight_shell(self) -> None:
         opened: list[str] = []
 

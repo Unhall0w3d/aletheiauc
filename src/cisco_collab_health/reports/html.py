@@ -474,6 +474,7 @@ class HtmlReportBuilder:
         service_deployment_rows = self._service_deployment_rows(report)
         configuration_rows = self._configuration_rows(report)
         platform_check_rows = self._platform_check_rows(report)
+        backup_readiness_section = self._backup_readiness_section(report)
         software_consistency_section = self._software_consistency_section(report)
         platform_checks_section = "" if self.customer_safe else f"""
     <section>
@@ -938,6 +939,7 @@ class HtmlReportBuilder:
     {coverage_section}
     {analysis_cuc_platform_section}
     {cluster_section}
+    {backup_readiness_section}
     {lifecycle_section}
     {software_consistency_section}
     <section>
@@ -1983,6 +1985,47 @@ class HtmlReportBuilder:
         <thead><tr><th>Technology</th><th>Cluster Anchor</th><th>Product</th><th>Version</th></tr></thead>
         <tbody>{rows}</tbody>
       </table>
+    </section>
+"""
+
+    def _backup_readiness_section(self, report: AssessmentReport) -> str:
+        """Show CUCM DRS history only when it was actually collected."""
+
+        checks = [
+            item
+            for item in report.facts.platform_checks
+            if item.source == "CUCM.UCOS.CLI"
+            and item.check_name == "utils disaster_recovery history backup"
+        ]
+        if not checks:
+            return ""
+        description = (
+            "Source: bounded UCOS Disaster Recovery history. A missing date means the collected "
+            "CLI output did not contain an unambiguous successful-backup date."
+            if not self.customer_safe
+            else "This shows the most recent successfully recorded CUCM backup when its date could "
+            "be read unambiguously from the collected system history."
+        )
+        rows = "".join(
+            "<tr>"
+            f"<td>{escape(self._identifier(item.node, 'Node'))}</td>"
+            f"<td>{escape(display_text(item.details.get('latest_successful_backup')))}</td>"
+            f"<td>{escape(display_text(item.details.get('latest_successful_backup_age_days')))}</td>"
+            f"<td>{escape(display_text(item.details.get('successful_backup_entries')))}</td>"
+            f"<td>{escape('Unavailable or busy' if item.details.get('drs_unavailable') == 'true' else 'Available')}</td>"
+            "</tr>"
+            for item in sorted(
+                checks, key=lambda item: self._node_reference_sort_key(report, item.node)
+            )
+        )
+        return f"""
+    <section>
+      <h2>Recovery and Backup Readiness</h2>
+      <p class="meta">{escape(description)}</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Node</th><th>Latest successful backup</th><th>Age (days)</th><th>Successful history entries</th><th>DRS status</th></tr></thead>
+        <tbody>{rows}</tbody>
+      </table></div>
     </section>
 """
 
