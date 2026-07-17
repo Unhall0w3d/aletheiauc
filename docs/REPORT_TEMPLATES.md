@@ -157,3 +157,8 @@ With an authorized external ComSource pack installed, it additionally includes:
 
 The existing `report.html` and `customer_safe_report.html` remain as compatible
 copies of the operator-selected template.
+
+The customer edition retains customer-relevant identifiers, configuration, and
+actionable findings, while omitting collection-source captions, collection
+coverage, and source columns from detailed tables. Engineering editions retain
+that provenance for diagnostic review.

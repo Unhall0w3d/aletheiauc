@@ -456,8 +456,8 @@ cards, chapter structure, responsive containment, findings, and evidence
 presentation. The customer edition retains target names, hostnames, IP
 addresses, devices, dial-plan values, configuration, and actionable finding
 facts so customer engineers can interpret the assessment. It omits collection
-coverage, command-level platform-check records, collector notes/issues/evidence,
-and the engineering reconciliation appendix.
+source and coverage mechanics, command-level platform-check records, collector
+notes/issues/evidence, and the engineering reconciliation appendix.
 
 The CLI discovers other registered templates only when their complete local
 asset pack is present, so a clean clone remains fully functional. Template

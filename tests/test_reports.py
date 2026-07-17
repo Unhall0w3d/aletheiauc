@@ -142,6 +142,13 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("Unity Connection Mailbox Capacity — Top 10", payload)
         self.assertLess(payload.index("Largest Mailbox"), payload.index("Small Mailbox"))
         self.assertIn("3.0 MiB", payload)
+        self.assertIn(
+            "Each value is the current size of that user&#x27;s voice messages in the mailbox, "
+            "including message data tracked by Unity Connection.",
+            payload,
+        )
+        self.assertNotIn("Source: read-only CUPI mailbox attributes", payload)
+        self.assertNotIn("Coverage: 2 of 2", payload)
 
     def test_html_report_renders_cuc_cluster_role_section(self) -> None:
         report = AssessmentReport(
@@ -503,8 +510,10 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertNotIn("Collector Evidence", payload)
         self.assertNotIn("Collector Notes", payload)
         self.assertNotIn("Collection Coverage", payload)
+        self.assertNotIn("Traceability", payload)
         self.assertNotIn("Platform Checks", payload)
-        self.assertIn("CUCM configuration discovery; Unity Connection cluster status", payload)
+        self.assertNotIn("CUCM configuration discovery; Unity Connection cluster status", payload)
+        self.assertNotIn("Source: ", payload)
 
     def test_target_scope_uses_discovered_publisher_when_address_is_unavailable(self) -> None:
         report = AssessmentReport(
@@ -1251,6 +1260,7 @@ class ReportBuilderTests(unittest.TestCase):
             self.assertNotIn("Unity Connection Inventory", customer)
             self.assertNotIn("Unity Connection Configuration", customer)
             self.assertIn("Unity Connection Platform Health", customer)
+            self.assertNotIn("Source: bounded UCOS diagnostic commands", customer)
             self.assertLess(
                 customer.index("Unity Connection Platform Health"),
                 customer.index("<h2>Cluster</h2>"),
@@ -1325,7 +1335,7 @@ class ReportBuilderTests(unittest.TestCase):
         )
 
         payload = HtmlReportBuilder(customer_safe=True).build(report)
-        self.assertIn("Configured Endpoint Runtime Coverage", payload)
+        self.assertIn("Configured Endpoint Runtime Snapshot", payload)
         self.assertIn("Hub_None", payload)
         self.assertIn("did not cause the missing runtime observations", payload)
         self.assertIn("Call Manager Runtime Resources", payload)

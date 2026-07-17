@@ -350,6 +350,8 @@ class HtmlReportBuilder:
             len(result.warnings) + len(result.errors) for result in report.collector_results
         )
         collector_evidence_count = sum(len(result.evidence) for result in report.collector_results)
+        def source_caption(section: str) -> str:
+            return "" if self.customer_safe else _source_caption(section, report)
         header_metadata = self._header_metadata(report)
         hero_image = _optional_theme_asset_data_uri(self.template.key, "hero-background")
         watermark_image = _optional_theme_asset_data_uri(self.template.key, "watermark")
@@ -380,6 +382,26 @@ class HtmlReportBuilder:
             logo_image=logo_image,
         )
         template_footer = self._template_footer(logo_image=logo_image, footer_image=footer_image)
+        firmware_intro = (
+            "Source: RISPort runtime firmware and download state. Unknown download status is "
+            "reported as unknown and is not treated as a failure."
+            if not self.customer_safe
+            else "Unknown download status is reported as unknown and is not treated as a failure."
+        )
+        configuration_intro = (
+            "Source: bounded, read-only AXL and CUPI configuration discovery. Counts reflect "
+            "captured responses and do not by themselves imply policy validation."
+            if not self.customer_safe
+            else "Counts describe the configured environment and do not by themselves imply policy validation."
+        )
+        certificate_intro = (
+            "Source: per-node UC Certificate Management REST snapshots. Active service certificates "
+            "and trust-store entries are presented separately: trust entries need review but do not "
+            "alone establish an outage."
+            if not self.customer_safe
+            else "Active service certificates and trust-store entries are presented separately: trust "
+            "entries need review but do not alone establish an outage."
+        )
         methodology_scope_section = self._methodology_scope_section(report)
         target_scope_section = self._target_scope_section(report)
         cuc_inventory_section = self._cuc_inventory_section(report)
@@ -451,7 +473,7 @@ class HtmlReportBuilder:
         platform_checks_section = "" if self.customer_safe else f"""
     <section>
       <h2>Platform Checks</h2>
-      {_source_caption("Platform Checks", report)}
+      {source_caption("Platform Checks")}
       <details class="report-data"><summary>Show platform checks</summary>
       <table>
         <thead><tr><th>Node</th><th>Check</th><th>Status</th><th>Details</th><th>Source</th></tr></thead>
@@ -915,7 +937,7 @@ class HtmlReportBuilder:
     {software_consistency_section}
     <section>
       <h2>Discovered Nodes</h2>
-      {self._node_source_caption(report)}
+      {"" if self.customer_safe else self._node_source_caption(report)}
       <table>
         <thead><tr><th>Technology</th><th>Name</th><th>Address</th><th>Role</th><th>Reachable</th></tr></thead>
         <tbody>
@@ -925,7 +947,7 @@ class HtmlReportBuilder:
     </section>
     <section>
       <h2>Device Inventory By Model</h2>
-      {_source_caption("Device Inventory By Model", report)}
+      {source_caption("Device Inventory By Model")}
       <details class="report-data"><summary>Show device inventory by model</summary>
       <table>
         <thead>
@@ -941,7 +963,7 @@ class HtmlReportBuilder:
     </section>
     <section>
       <h2>Device Registration Summary</h2>
-      {_source_caption("Device Registration Summary", report)}
+      {source_caption("Device Registration Summary")}
       <table>
         <thead>
           <tr>
@@ -958,7 +980,7 @@ class HtmlReportBuilder:
     {call_manager_runtime_resources_section}
     <section>
       <h2>Device Load Summary</h2>
-      {_source_caption("Device Load Summary", report)}
+      {source_caption("Device Load Summary")}
       {device_load_note}
       <details class="report-data"><summary>Show device load defaults and overrides</summary>
       <table>
@@ -984,8 +1006,7 @@ class HtmlReportBuilder:
     </section>
     <section>
       <h2>Runtime Firmware and Downloads</h2>
-      <p class="meta">Source: RISPort runtime firmware and download state. Unknown download
-      status is reported as unknown and is not treated as a failure.</p>
+      <p class="meta">{escape(firmware_intro)}</p>
       <details class="report-data"><summary>Show active firmware by model</summary>
       <table>
         <thead><tr><th>Model</th><th>Protocol</th><th>Active Load</th><th>Devices</th></tr></thead>
@@ -1031,7 +1052,7 @@ class HtmlReportBuilder:
     </section>
     <section>
       <h2>Services</h2>
-      {_source_caption("Services", report)}
+      {source_caption("Services")}
       <table>
         <thead><tr><th>Node</th><th>Started</th><th>Stopped</th><th>Total</th></tr></thead>
         <tbody>{service_summary_rows}</tbody>
@@ -1060,7 +1081,7 @@ class HtmlReportBuilder:
         <thead>
           <tr>
             <th>Node</th><th>Service</th><th>Type</th><th>Group</th><th>Status</th>
-            <th>Uptime</th><th>Reason</th><th>Source</th>
+            <th>Uptime</th><th>Reason</th>{"<th>Source</th>" if not self.customer_safe else ""}
           </tr>
         </thead>
         <tbody>
@@ -1071,7 +1092,7 @@ class HtmlReportBuilder:
     </section>
     <section>
       <h2>Performance Counters</h2>
-      {_source_caption("Performance Counters", report)}
+      {source_caption("Performance Counters")}
       {cpu_note}
       <p class="meta">Memory values are point-in-time observations; no memory health threshold is applied.</p>
       <details class="report-data"><summary>Show performance summary</summary>
@@ -1086,7 +1107,7 @@ class HtmlReportBuilder:
         <thead>
           <tr>
             <th>Node</th><th>Object</th><th>Counter</th><th>Instance</th>
-            <th>Value</th><th>Samples</th><th>Source</th>
+            <th>Value</th><th>Samples</th>{"<th>Source</th>" if not self.customer_safe else ""}
           </tr>
         </thead>
         <tbody>
@@ -1097,8 +1118,7 @@ class HtmlReportBuilder:
     </section>
     <section>
       <h2>Configuration Inventory</h2>
-      <p class="meta">Source: bounded, read-only AXL and CUPI configuration discovery. Counts
-      reflect captured responses and do not by themselves imply policy validation.</p>
+      <p class="meta">{escape(configuration_intro)}</p>
       <details class="report-data"><summary>Show configuration inventory summary</summary>
       <table>
         <thead><tr><th>Object Type</th><th>Count</th></tr></thead>
@@ -1147,15 +1167,14 @@ class HtmlReportBuilder:
       <details class="report-data">
         <summary>Show captured configuration objects</summary>
         <table>
-          <thead><tr><th>Type</th><th>Name/Pattern</th><th>Details</th><th>Source</th></tr></thead>
+          <thead><tr><th>Type</th><th>Name/Pattern</th><th>Details</th>{"<th>Source</th>" if not self.customer_safe else ""}</tr></thead>
           <tbody>{configuration_rows}</tbody>
         </table>
       </details>
     </section>
     <section>
       <h2>Certificate Validity and Trust</h2>
-      <p class="meta">Source: per-node UC Certificate Management REST snapshots. Active service certificates and
-      trust-store entries are presented separately: trust entries need review but do not alone establish an outage.</p>
+      <p class="meta">{escape(certificate_intro)}</p>
       {certificate_summary}
       <details class="report-data"><summary>Show certificates requiring attention</summary>
       <div class="table-scroll"><table>
@@ -1173,7 +1192,7 @@ class HtmlReportBuilder:
     {"" if self.customer_safe else reconciliation_section}
     <section>
       <h2>Detailed Device Inventory</h2>
-      {_source_caption("Detailed Device Inventory", report)}
+      {source_caption("Detailed Device Inventory")}
       <details class="report-data">
       <summary>Show detailed configured device inventory</summary>
       <table>
@@ -1192,7 +1211,7 @@ class HtmlReportBuilder:
     </section>
     <section>
       <h2>Detailed Device Registration</h2>
-      {_source_caption("Detailed Device Registration", report)}
+      {source_caption("Detailed Device Registration")}
       <details class="report-data">
       <summary>Show detailed runtime registration inventory</summary>
       <table>
@@ -1200,7 +1219,7 @@ class HtmlReportBuilder:
           <tr>
             <th>Name</th><th>Status</th><th>Registered Node</th><th>IP Address</th>
             <th>Model</th><th>Protocol</th><th>Active Load</th><th>Download Status</th><th>Failure Reason</th>
-            <th>Registration Attempts</th><th>Source</th>
+            <th>Registration Attempts</th>{"<th>Source</th>" if not self.customer_safe else ""}
           </tr>
         </thead>
         <tbody>
@@ -1296,7 +1315,7 @@ class HtmlReportBuilder:
     ) -> str:
         """Render the shared functional metric groups using assessment facts."""
 
-        groups = (
+        groups = [
             (
                 "Environment",
                 "Discovered scale",
@@ -1329,7 +1348,7 @@ class HtmlReportBuilder:
             ),
             (
                 "Telemetry",
-                "Runtime collection",
+                "Operational snapshot" if self.customer_safe else "Runtime collection",
                 (
                     (
                         len(report.facts.registrations),
@@ -1387,37 +1406,40 @@ class HtmlReportBuilder:
                     ),
                 ),
             ),
-            (
-                "Traceability",
-                "Collection confidence",
+        ]
+        if not self.customer_safe:
+            groups.append(
                 (
+                    "Traceability",
+                    "Collection confidence",
                     (
-                        collector_issue_count,
-                        "Collection Issues",
-                        "Known collection gaps",
-                        "Gaps",
-                        "issues",
-                        "warning",
+                        (
+                            collector_issue_count,
+                            "Collection Issues",
+                            "Known collection gaps",
+                            "Gaps",
+                            "issues",
+                            "warning",
+                        ),
+                        (
+                            collector_note_count,
+                            "Collection Notes",
+                            "Collection and interpretation notes",
+                            "Notes",
+                            "notes",
+                            "normal",
+                        ),
+                        (
+                            collector_evidence_count,
+                            "Evidence References",
+                            "Traceable source references",
+                            "Evidence",
+                            "evidence",
+                            "normal",
+                        ),
                     ),
-                    (
-                        collector_note_count,
-                        "Collection Notes",
-                        "Collection and interpretation notes",
-                        "Notes",
-                        "notes",
-                        "normal",
-                    ),
-                    (
-                        collector_evidence_count,
-                        "Evidence References",
-                        "Traceable source references",
-                        "Evidence",
-                        "evidence",
-                        "normal",
-                    ),
-                ),
-            ),
-        )
+                )
+            )
         group_markup = []
         for name, description, metrics in groups:
             cards = []
@@ -1437,7 +1459,7 @@ class HtmlReportBuilder:
         return f"""<section class="section executive-section rds-section rds-executive">
   <header class="rds-executive__heading"><span>Assessment control plane</span>
     <h2>Executive Overview</h2>
-    <p>Environment scale, runtime telemetry, prioritized risk, and evidence coverage.</p>
+    <p>{"Environment scale, runtime telemetry, and prioritized risk." if self.customer_safe else "Environment scale, runtime telemetry, prioritized risk, and evidence coverage."}</p>
   </header>
   <div class="rds-metric-groups">{"".join(group_markup)}</div>
 </section>"""
@@ -1929,7 +1951,7 @@ class HtmlReportBuilder:
             return f"""
     <section>
       <h2>Cluster</h2>
-      {_source_caption("Cluster", report)}
+      {"" if self.customer_safe else _source_caption("Cluster", report)}
       <p>Cluster identity was not collected.</p>
     </section>
 """
@@ -1951,7 +1973,7 @@ class HtmlReportBuilder:
         return f"""
     <section>
       <h2>Cluster</h2>
-      {_source_caption("Cluster", report)}
+      {"" if self.customer_safe else _source_caption("Cluster", report)}
       <table>
         <thead><tr><th>Technology</th><th>Cluster Anchor</th><th>Product</th><th>Version</th></tr></thead>
         <tbody>{rows}</tbody>
@@ -2031,6 +2053,12 @@ class HtmlReportBuilder:
         ]
         if not active_checks:
             return ""
+        description = (
+            "Source: per-node UCOS <code>show version active</code> and <code>show version inactive</code>. "
+            "Installed software options are compared with the collected Publisher baseline."
+            if not self.customer_safe
+            else "Installed software versions and options are compared with the Publisher baseline."
+        )
         inactive_by_node = {
             ((item.target_id or item.source), item.node.lower()): item
             for item in report.facts.platform_checks
@@ -2083,7 +2111,7 @@ class HtmlReportBuilder:
         return f"""
     <section>
       <h2>Cluster Software Consistency</h2>
-      <p class="meta">Source: per-node UCOS <code>show version active</code> and <code>show version inactive</code>. Installed software options are compared with the collected Publisher baseline.</p>
+      <p class="meta">{description}</p>
       <div class="table-scroll"><table>
         <thead><tr><th>Technology</th><th>Assessment target</th><th>Node</th><th>Active version</th><th>Inactive version</th><th>Installed software options</th><th>Comparison</th></tr></thead>
         <tbody>{''.join(rows)}</tbody>
@@ -2258,7 +2286,8 @@ class HtmlReportBuilder:
 
     def _registration_rows(self, report: AssessmentReport) -> str:
         if not report.facts.registrations:
-            return '<tr><td colspan="11">No device registration facts collected.</td></tr>'
+            colspan = 10 if self.customer_safe else 11
+            return f'<tr><td colspan="{colspan}">No device registration facts collected.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -2272,8 +2301,12 @@ class HtmlReportBuilder:
                 f"<td>{escape(display_text(registration.download_status))}</td>"
                 f"<td>{escape(display_text(registration.download_failure_reason))}</td>"
                 f"<td>{escape(display_text(registration.registration_attempts))}</td>"
-                f"<td>{escape(display_source(registration.source))}</td>"
-                "</tr>"
+                + (
+                    f"<td>{escape(display_source(registration.source))}</td>"
+                    if not self.customer_safe
+                    else ""
+                )
+                + "</tr>"
             )
             for registration in sorted(
                 report.facts.registrations,
@@ -2389,7 +2422,7 @@ class HtmlReportBuilder:
         model_rows = self._inventory_only_summary_rows(without_runtime, "model")
         pool_rows = self._inventory_only_summary_rows(without_runtime, "device_pool")
         location_rows = self._inventory_only_summary_rows(without_runtime, "location")
-        detail_rows = self._inventory_only_rows(without_runtime)
+        detail_rows = self._inventory_only_rows(without_runtime, include_source=not self.customer_safe)
         location_context = ""
         if any(
             (device.location or "").strip().casefold() == "hub_none" for device in without_runtime
@@ -2399,18 +2432,25 @@ class HtmlReportBuilder:
                 "the CUCM Location assigned to these devices. Reconciliation matches device "
                 "names, so that Location value did not cause the missing runtime observations.</p>"
             )
+        description = (
+            "Name-based comparison of configured endpoint inventory with the current runtime "
+            "snapshot. Absence from the runtime snapshot means no observation was returned; it "
+            "does not by itself prove that an endpoint is administratively unregistered or unhealthy."
+            if self.customer_safe
+            else "Name-based comparison of AXL configured endpoint inventory with the current/recent "
+            "RIS response. Absence from RIS means no runtime observation was returned; it does not "
+            "by itself prove that an endpoint is administratively unregistered or unhealthy."
+        )
 
         return f"""
     <section>
-      <h2>Configured Endpoint Runtime Coverage</h2>
-      <p class="meta">Name-based comparison of AXL configured endpoint inventory with the
-      current/recent RIS response. Absence from RIS means no runtime observation was returned;
-      it does not by itself prove that an endpoint is administratively unregistered or unhealthy.</p>
+      <h2>Configured Endpoint Runtime Snapshot</h2>
+      <p class="meta">{escape(description)}</p>
       {location_context}
       <table><tbody>
-        <tr><th>Configured endpoints</th><td>{configured_endpoints}</td></tr>
-        <tr><th>Endpoints observed in RIS</th><td>{observed_endpoints}</td></tr>
-        <tr><th>Configured endpoints without RIS observation</th><td>{len(without_runtime)}</td></tr>
+        <tr><th>Configured endpoint-like devices</th><td>{configured_endpoints}</td></tr>
+        <tr><th>Devices observed in the runtime snapshot</th><td>{observed_endpoints}</td></tr>
+        <tr><th>Devices not observed in the snapshot (status unknown)</th><td>{len(without_runtime)}</td></tr>
         <tr><th>Configuration templates excluded</th><td>{len(known_templates)}</td></tr>
       </tbody></table>
       <details class="report-data"><summary>Show configured endpoints without a runtime observation</summary>
@@ -2425,7 +2465,7 @@ class HtmlReportBuilder:
         <tbody>{location_rows}</tbody></table></div>
         <h3>Endpoint Detail</h3>
         <div class="table-scroll"><table>
-          <thead><tr><th>Name</th><th>Model</th><th>Protocol</th><th>Device Pool</th><th>Location</th><th>Source</th></tr></thead>
+          <thead><tr><th>Name</th><th>Model</th><th>Protocol</th><th>Device Pool</th><th>Location</th>{"<th>Source</th>" if not self.customer_safe else ""}</tr></thead>
           <tbody>{detail_rows}</tbody>
         </table></div>
       </details>
@@ -2501,12 +2541,18 @@ class HtmlReportBuilder:
                 ),
             )
         )
+        description = (
+            "Source: supplemental RIS all-device-class runtime discovery. Trunks, gateways, "
+            "route lists, CTI route points, and media resources are classified using the returned "
+            "CUCM device class and model code rather than treated as unmatched phones."
+            if not self.customer_safe
+            else "Trunks, gateways, route lists, CTI route points, and media resources are "
+            "classified separately from phones."
+        )
         return f"""
     <section>
       <h2>Call Manager Runtime Resources</h2>
-      <p class="meta">Source: supplemental RIS all-device-class runtime discovery. Trunks,
-      gateways, route lists, CTI route points, and media resources are classified using the
-      returned CUCM device class and model code rather than treated as unmatched phones.</p>
+      <p class="meta">{escape(description)}</p>
       <table><thead><tr><th>Resource Type</th><th>Registered</th><th>Unregistered</th><th>Other / Unknown</th><th>Total</th></tr></thead>
       <tbody>{summary_rows}</tbody></table>
       <details class="report-data"><summary>Show Call Manager runtime resource details</summary>
@@ -2622,7 +2668,8 @@ class HtmlReportBuilder:
 
     def _service_rows(self, report: AssessmentReport) -> str:
         if not report.facts.services:
-            return '<tr><td colspan="8">No service status facts collected.</td></tr>'
+            colspan = 7 if self.customer_safe else 8
+            return f'<tr><td colspan="{colspan}">No service status facts collected.</td></tr>'
 
         return "\n".join(
             (
@@ -2634,8 +2681,12 @@ class HtmlReportBuilder:
                 f"<td>{escape(service.status)}</td>"
                 f"<td>{escape(display_duration(service.uptime_seconds))}</td>"
                 f"<td>{escape(display_text(service.reason))}</td>"
-                f"<td>{escape(display_source(service.source))}</td>"
-                "</tr>"
+                + (
+                    f"<td>{escape(display_source(service.source))}</td>"
+                    if not self.customer_safe
+                    else ""
+                )
+                + "</tr>"
             )
             for service in sorted(
                 report.facts.services,
@@ -2694,7 +2745,8 @@ class HtmlReportBuilder:
 
     def _perf_counter_rows(self, report: AssessmentReport) -> str:
         if not report.facts.perf_counters:
-            return '<tr><td colspan="7">No performance counter facts collected.</td></tr>'
+            colspan = 6 if self.customer_safe else 7
+            return f'<tr><td colspan="{colspan}">No performance counter facts collected.</td></tr>'
 
         return "\n".join(
             (
@@ -2705,8 +2757,12 @@ class HtmlReportBuilder:
                 f"<td>{escape(display_text(counter.instance))}</td>"
                 f"<td>{escape(display_text(counter.value))}</td>"
                 f"<td>{counter.sample_count}</td>"
-                f"<td>{escape(display_source(counter.source))}</td>"
-                "</tr>"
+                + (
+                    f"<td>{escape(display_source(counter.source))}</td>"
+                    if not self.customer_safe
+                    else ""
+                )
+                + "</tr>"
             )
             for counter in sorted(
                 report.facts.perf_counters,
@@ -2882,10 +2938,18 @@ class HtmlReportBuilder:
             if status != "complete"
             else ""
         )
+        description = (
+            "Source: read-only CUPI mailbox attributes. Each value is the current size of that "
+            "user's voice messages in the mailbox, including message data tracked by Unity "
+            f"Connection. Coverage: {coverage} ({status}).{limitation}"
+            if not self.customer_safe
+            else "Each value is the current size of that user's voice messages in the mailbox, "
+            "including message data tracked by Unity Connection."
+        )
         return f"""
     <section class="technology-section cuc-section">
       <h2>Unity Connection Mailbox Capacity — Top 10</h2>
-      <p class="meta">Source: read-only CUPI mailbox attributes. Each value is the current size of that user's voice messages in the mailbox, including message data tracked by Unity Connection. Coverage: {escape(coverage)} ({escape(status)}).{limitation}</p>
+      <p class="meta">{escape(description)}</p>
       <div class="table-scroll"><table>
         <thead><tr><th>Rank</th><th>User</th><th>Alias</th><th>Used size</th><th>Messages</th><th>Mounted</th></tr></thead>
         <tbody>{rows}</tbody>
@@ -2907,10 +2971,19 @@ class HtmlReportBuilder:
             f"<td>{escape(display_text(item.details.get('reason')))}</td></tr>"
             for item in sorted(runtime, key=lambda item: _natural_sort_key(item.name))
         )
+        description = (
+            "Source: <code>show cuc cluster status</code>. A healthy two-node steady state has "
+            "one Primary and one Secondary. A Subscriber in Primary is a valid failover state; "
+            "multiple Primary roles require immediate engineering review."
+            if not self.customer_safe
+            else "A healthy two-node steady state has one Primary and one Secondary. A Subscriber "
+            "in Primary is a valid failover state; multiple Primary roles require immediate "
+            "engineering review."
+        )
         return f"""
     <section class="technology-section cuc-section">
       <h2>Unity Connection Cluster Role and Replication</h2>
-      <p class="meta">Source: <code>show cuc cluster status</code>. A healthy two-node steady state has one Primary and one Secondary. A Subscriber in Primary is a valid failover state; multiple Primary roles require immediate engineering review.</p>
+      <p class="meta">{description}</p>
       <table><thead><tr><th>Node</th><th>Server role</th><th>Internal state</th><th>Reason</th></tr></thead>
       <tbody>{rows}</tbody></table>
     </section>
@@ -3071,8 +3144,16 @@ class HtmlReportBuilder:
             )
         if not rows:
             return ""
+        platform_intro = (
+            '<p class="meta">Source: bounded UCOS diagnostic commands. Full output remains in the '
+            "private engineering artifact bundle.</p>"
+            if not self.customer_safe
+            else ""
+        )
         return (
-            '<section class="technology-section cuc-section"><h2>Unity Connection Platform Health</h2><p class="meta">Source: bounded UCOS diagnostic commands. Full output remains in the private engineering artifact bundle.</p><details class="report-data"><summary>Show Unity Connection platform checks</summary><table><thead><tr><th>Node</th><th>Check</th><th>Status</th><th>Summary</th></tr></thead><tbody>'
+            '<section class="technology-section cuc-section"><h2>Unity Connection Platform Health</h2>'
+            + platform_intro
+            + '<details class="report-data"><summary>Show Unity Connection platform checks</summary><table><thead><tr><th>Node</th><th>Check</th><th>Status</th><th>Summary</th></tr></thead><tbody>'
             + "".join(rows)
             + "</tbody></table></details></section>"
         )
@@ -3180,14 +3261,19 @@ class HtmlReportBuilder:
             if not _is_cuc_configuration_object(item)
         ]
         if not configuration:
-            return '<tr><td colspan="4">No normalized configuration objects collected.</td></tr>'
+            colspan = 3 if self.customer_safe else 4
+            return f'<tr><td colspan="{colspan}">No normalized configuration objects collected.</td></tr>'
         return "\n".join(
             "<tr>"
             f"<td>{escape(item.object_type)}</td>"
             f"<td>{escape(item.name)}</td>"
             f"<td>{escape(display_details(item.details))}</td>"
-            f"<td>{escape(display_source(item.source))}</td>"
-            "</tr>"
+            + (
+                f"<td>{escape(display_source(item.source))}</td>"
+                if not self.customer_safe
+                else ""
+            )
+            + "</tr>"
             for item in sorted(
                 configuration,
                 key=lambda fact: (fact.object_type, fact.name),
@@ -3502,11 +3588,12 @@ class HtmlReportBuilder:
             )
         )
 
-    def _inventory_only_rows(self, devices: list[DeviceInventoryFact]) -> str:
+    def _inventory_only_rows(
+        self, devices: list[DeviceInventoryFact], *, include_source: bool = True
+    ) -> str:
         if not devices:
-            return (
-                '<tr><td colspan="6">No configured devices absent from the RIS response.</td></tr>'
-            )
+            colspan = 6 if include_source else 5
+            return f'<tr><td colspan="{colspan}">No configured devices absent from the RIS response.</td></tr>'
         return "\n".join(
             (
                 "<tr>"
@@ -3515,8 +3602,8 @@ class HtmlReportBuilder:
                 f"<td>{escape(display_text(device.protocol))}</td>"
                 f"<td>{escape(display_text(device.device_pool))}</td>"
                 f"<td>{escape(display_text(device.location))}</td>"
-                f"<td>{escape(display_source(device.source))}</td>"
-                "</tr>"
+                + (f"<td>{escape(display_source(device.source))}</td>" if include_source else "")
+                + "</tr>"
             )
             for device in devices
         )
