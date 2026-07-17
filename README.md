@@ -446,9 +446,9 @@ artifact paths and engineering-only collection mechanics:
 
 ## HTML Report Templates
 
-HTML reports use the `aletheiauc` template by default. It draws on the project
-key for compatibility, but renders as a generic, text-first dark assessment
-report with no logo, imagery, or product-specific report branding. The same
+When a complete locally installed `comsource` pack is available, HTML reports
+use it by default. Otherwise they use the generic dark `aletheiauc` template.
+The generic report has no logo, imagery, or product-specific branding. The same
 semantic report-design components are used by the full engineering report, the
 customer deliverable, ComSource, and future templates. Themes retain their own
 colors, typography, imagery, and logo rules while sharing functional metric
@@ -470,7 +470,8 @@ Python packages. Install an authorized pack under
 renderer automatically offer every complete installed pack. An alternate parent
 directory can be selected with `ALETHEIAUC_REPORT_TEMPLATE_DIR`.
 
-For example, an authorized locally installed `comsource` pack is selected with:
+An authorized locally installed `comsource` pack is selected automatically; it
+can also be requested explicitly:
 
 ```bash
 ./aletheiauc.py --html-template comsource --customer-safe-report

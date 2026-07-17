@@ -81,13 +81,13 @@ REPORT_THEMES = {
         asset_directory="",
         slots={},
         colors={
-            "page": "#111827",
-            "surface": "#182230",
-            "text": "#F3F4F6",
-            "muted": "#A8B2C1",
-            "accent": "#8190A5",
-            "cyan": "#73C7D8",
-            "gold": "#E8B86D",
+            "page": "#17191D",
+            "surface": "#22252B",
+            "text": "#F4F5F6",
+            "muted": "#B2B7BE",
+            "accent": "#9299A3",
+            "cyan": "#8EBFCC",
+            "gold": "#D6BE8A",
         },
         hero_overlay="none",
         hero_focal_point="center",
@@ -313,11 +313,18 @@ def available_report_templates() -> tuple[str, ...]:
     )
 
 
+def default_report_template() -> str:
+    """Prefer the complete local ComSource pack, with a safe generic fallback."""
+
+    return "comsource" if "comsource" in available_report_templates() else "aletheiauc"
+
+
 class HtmlReportBuilder:
     """Builds a styled standalone HTML report."""
 
-    def __init__(self, *, customer_safe: bool = False, template: str = "aletheiauc") -> None:
+    def __init__(self, *, customer_safe: bool = False, template: str | None = None) -> None:
         self.customer_safe = customer_safe
+        template = template or default_report_template()
         templates, themes = _report_template_registry()
         try:
             self.template = templates[template]
@@ -1567,58 +1574,58 @@ class HtmlReportBuilder:
 
     @staticmethod
     def _default_dark_css() -> str:
-        """Neutral dark presentation for the default, text-first report."""
+        """Neutral dark presentation with the shared ComSource-style visual hierarchy."""
 
         return """
-    body.default-dark-report { background: #111827; color: #f3f4f6; }
+    body.default-dark-report { background: #17191d; color: #f4f5f6; }
     .default-dark-report .report-shell { width: min(1320px, calc(100% - 40px)); margin: 24px auto 64px; padding: 0; }
-    .default-dark-report .report-hero { min-height: 0; padding: 34px 42px 28px; border: 1px solid #334155; border-radius: 12px; background: #182230; box-shadow: 0 14px 34px rgba(0, 0, 0, .18); }
+    .default-dark-report .report-hero { min-height: 0; padding: 34px 42px 28px; border: 1px solid #3c4149; border-bottom: 6px solid #8ebfcc; border-radius: 14px; background: linear-gradient(105deg, #1b1d22 0%, #24272d 58%, #30343a 100%); box-shadow: 0 18px 45px rgba(0, 0, 0, .26); }
     .default-dark-report .rds-hero__overlay, .default-dark-report .hero-art, .default-dark-report .rds-watermark::before { display: none; }
     .default-dark-report .hero-copy { position: relative; max-width: 760px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
-    .default-dark-report .hero-copy .eyebrow { margin: 0 0 7px; color: #a8b2c1; }
+    .default-dark-report .hero-copy .eyebrow { margin: 0 0 7px; color: #b2b7be; }
     .default-dark-report .hero-copy h1 { color: #f9fafb; font-size: clamp(28px, 4vw, 42px); }
-    .default-dark-report .hero-copy p:last-child { color: #c5ceda; }
+    .default-dark-report .hero-copy p:last-child { color: #c9cdd2; }
     .default-dark-report .report-hero::after { display: none; }
     .default-dark-report .report-hero .header-meta { justify-content: flex-start; max-width: none; margin-top: 22px; }
-    .default-dark-report .meta-chip { border-color: #435268; background: #202c3d; color: #e5e7eb; }
-    .default-dark-report .meta-chip::before { content: "•"; color: #a8b2c1; }
-    .default-dark-report .meta-chip.scope { border-color: #4f8090; color: #d7eef2; }
-    .default-dark-report .meta-chip.diagnostic { border-color: #8c7041; color: #f4dfba; }
+    .default-dark-report .meta-chip { border-color: #535861; background: rgba(18, 20, 24, .34); color: #edf0f2; }
+    .default-dark-report .meta-chip::before { content: "•"; color: #8ebfcc; }
+    .default-dark-report .meta-chip.scope { border-color: #60818a; color: #d9eef1; }
+    .default-dark-report .meta-chip.diagnostic { border-color: #88774e; color: #e7d7af; }
     .default-dark-report .rds-transition { display: none; }
     .default-dark-report main { display: grid; gap: 18px; margin-top: 18px; }
-    .default-dark-report section { margin: 0; border-color: #334155; background: #182230; box-shadow: 0 8px 20px rgba(0, 0, 0, .14); }
+    .default-dark-report section { margin: 0; border-color: #3c4149; background: #22252b; box-shadow: 0 10px 28px rgba(0, 0, 0, .18); }
     .default-dark-report section::before { display: none; }
-    .default-dark-report section > h2 { background: #1d2938; border-bottom-color: #334155; color: #f3f4f6; }
-    .default-dark-report .rds-executive { padding: 32px; border: 1px solid #334155; border-radius: 12px; background: #182230; box-shadow: 0 8px 20px rgba(0, 0, 0, .14); }
+    .default-dark-report section > h2 { padding-left: 20px; border-bottom-color: #3c4149; border-left: 5px solid #8ebfcc; background: linear-gradient(90deg, #2b2e34, #22252b); color: #f4f5f6; }
+    .default-dark-report .rds-executive { padding: 32px; border: 1px solid #3c4149; border-radius: 12px; background: #22252b; box-shadow: 0 10px 28px rgba(0, 0, 0, .18); }
     .default-dark-report .rds-executive::after { display: none; }
-    .default-dark-report .rds-executive__heading > span, .default-dark-report .rds-chapter__copy > span { color: #a8b2c1; }
+    .default-dark-report .rds-executive__heading > span, .default-dark-report .rds-chapter__copy > span { color: #8ebfcc; }
     .default-dark-report .rds-executive__heading h2, .default-dark-report .rds-chapter__copy h2 { color: #f3f4f6; }
-    .default-dark-report .rds-executive__heading p, .default-dark-report .rds-chapter__copy p { color: #b8c2cf; }
-    .default-dark-report .rds-metric-group > header span { color: #b8c2cf; }
-    .default-dark-report .rds-metric-group > header p { color: #94a3b8; }
-    .default-dark-report .rds-metric { border: 1px solid #3b4a60; background: #202c3d; box-shadow: none; }
+    .default-dark-report .rds-executive__heading p, .default-dark-report .rds-chapter__copy p { color: #c1c6cc; }
+    .default-dark-report .rds-metric-group > header span { color: #c9cdd2; }
+    .default-dark-report .rds-metric-group > header p { color: #9fa6af; }
+    .default-dark-report .rds-metric { border: 1px solid #454a53; border-top: 4px solid #8ebfcc; background: #282b31; box-shadow: none; }
     .default-dark-report .rds-metric::after { display: none; }
-    .default-dark-report .rds-metric__icon { color: #9bd7e2; border: 1px solid #4d7883; background: #223746; }
-    .default-dark-report .rds-metric__state { color: #c6d0dc; border-color: #4a5b70; background: #263448; }
+    .default-dark-report .rds-metric__icon { color: #b7dce4; border: 1px solid #56727a; background: #293b40; }
+    .default-dark-report .rds-metric__state { color: #d4d8dd; border-color: #535861; background: #30343a; }
     .default-dark-report .rds-metric strong, .default-dark-report .rds-metric h4 { color: #f3f4f6; }
-    .default-dark-report .rds-metric p { color: #aeb9c6; }
-    .default-dark-report .rds-metric--critical { border-color: #9f3d4d; }
-    .default-dark-report .rds-metric--critical .rds-metric__icon { color: #ff9aa9; border-color: #87404b; background: #3b252c; }
-    .default-dark-report .rds-metric--warning { border-color: #8f7142; }
-    .default-dark-report .rds-metric--warning .rds-metric__icon { color: #f4c677; border-color: #80653d; background: #3c3324; }
-    .default-dark-report .rds-metric--info .rds-metric__icon { color: #a9c7f0; border-color: #536d90; background: #26364c; }
-    .default-dark-report .rds-chapter { min-height: 0; margin: 0; border: 1px solid #334155; background: #1d2938; box-shadow: none; }
+    .default-dark-report .rds-metric p { color: #b2b7be; }
+    .default-dark-report .rds-metric--critical { border-color: #a74a55; border-top-color: #d36470; }
+    .default-dark-report .rds-metric--critical .rds-metric__icon { color: #ffb3bc; border-color: #914c55; background: #452b30; }
+    .default-dark-report .rds-metric--warning { border-color: #957a4b; border-top-color: #d6be8a; }
+    .default-dark-report .rds-metric--warning .rds-metric__icon { color: #f0d69b; border-color: #897444; background: #433a29; }
+    .default-dark-report .rds-metric--info .rds-metric__icon { color: #bad5ef; border-color: #5a7190; background: #2a3544; }
+    .default-dark-report .rds-chapter { min-height: 0; margin: 0; border: 1px solid #3c4149; border-left: 5px solid #8ebfcc; background: linear-gradient(90deg, #2b2e34, #22252b); box-shadow: none; }
     .default-dark-report .rds-chapter::before, .default-dark-report .rds-chapter__sigil { display: none; }
     .default-dark-report .rds-chapter__copy { max-width: none; padding: 21px 24px; }
-    .default-dark-report .rds-recommendation { border-color: #5a674f; background: #222f28; }
+    .default-dark-report .rds-recommendation { border-color: #657152; background: #2b3129; }
     .default-dark-report .rds-recommendation::after { display: none; }
-    .default-dark-report .rds-recommendation__icon { color: #182230; background: #c5d4a8; }
-    .default-dark-report .finding { border-color: #3b4a60; background: #202c3d; }
-    .default-dark-report th { color: #dce7ef; background: #1d2938; }
-    .default-dark-report th, .default-dark-report td { border-bottom-color: #334155; }
-    .default-dark-report tbody tr:nth-child(even) { background: #1c2736; }
-    .default-dark-report .template-footer { display: flex; align-items: center; min-height: 0; margin-top: 18px; padding: 17px 20px; border: 1px solid #334155; border-radius: 10px; background: #182230; color: #aeb9c6; }
-    @media print { .default-dark-report .report-hero { min-height: auto; padding: 24px; border: 1px solid #334155; } .default-dark-report .rds-transition { display: none; } }
+    .default-dark-report .rds-recommendation__icon { color: #20251f; background: #d0d9b6; }
+    .default-dark-report .finding { border-color: #454a53; background: #282b31; }
+    .default-dark-report th { color: #edf0f2; background: #2b2e34; }
+    .default-dark-report th, .default-dark-report td { border-bottom-color: #3c4149; }
+    .default-dark-report tbody tr:nth-child(even) { background: #25282e; }
+    .default-dark-report .template-footer { display: flex; align-items: center; min-height: 0; margin-top: 18px; padding: 17px 20px; border: 1px solid #3c4149; border-radius: 10px; background: #202328; color: #b2b7be; }
+    @media print { .default-dark-report .report-hero { min-height: auto; padding: 24px; border: 1px solid #3c4149; } .default-dark-report .rds-transition { display: none; } }
 """
 
     @staticmethod

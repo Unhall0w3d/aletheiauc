@@ -5,9 +5,11 @@ the customer-deliverable data policy are shared by every template.
 
 ## Default dark report
 
-`aletheiauc` remains the default template key for CLI and saved-assessment
-compatibility, but its presentation is a generic, text-first dark report. It
-has no logo, product naming, imagery, watermark, or required asset pack. The
+`aletheiauc` remains the reliable fallback template key for CLI and saved-assessment
+compatibility. Its presentation is a generic, text-first dark report with no
+logo, product naming, imagery, watermark, or required asset pack. When the
+complete external `comsource` pack is installed, it is automatically selected
+as the default; otherwise this generic dark report is used. The shared
 shared cards, tables, chapter structure, responsive behavior, print behavior,
 and report data policy remain unchanged.
 
@@ -45,8 +47,8 @@ with AletheiaUC. The private pack has this layout:
 Install the `comsource` directory directly beneath the external template parent,
 for example `~/.config/aletheiauc/report-templates/comsource/manifest.json`.
 When every required file exists, it is automatically available to the CLI,
-menu, report builder, and review-bundle renderer. An incomplete pack is not
-listed, and an explicit programmatic request reports its missing files. Rendered
+menu, report builder, and review-bundle renderer—and becomes the default
+presentation. An incomplete pack is not listed, and an explicit programmatic request reports its missing files. Rendered
 reports embed installed assets as data URIs and have no external image dependency.
 
 Removing or moving the installed directory disables future generation of that

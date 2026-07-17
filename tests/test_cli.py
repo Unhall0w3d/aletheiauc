@@ -43,10 +43,11 @@ class CliTests(unittest.TestCase):
 
         self.assertTrue(args.customer_safe_report)
 
-    def test_default_html_template_is_aletheiauc(self) -> None:
-        args = cli.build_parser().parse_args([])
+    def test_default_html_template_uses_resolved_preference(self) -> None:
+        with patch("cisco_collab_health.cli.default_report_template", return_value="comsource"):
+            args = cli.build_parser().parse_args([])
 
-        self.assertEqual(args.html_template, "aletheiauc")
+        self.assertEqual(args.html_template, "comsource")
 
     def test_html_template_choices_are_discovered_from_installed_assets(self) -> None:
         with patch(

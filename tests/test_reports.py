@@ -44,6 +44,7 @@ from cisco_collab_health.reports.html import (
     HtmlReportBuilder,
     _theme_asset_data_uri,
     available_report_templates,
+    default_report_template,
 )
 from cisco_collab_health.reports.json import JsonReportBuilder
 from cisco_collab_health.reports.reconciliation import (
@@ -444,6 +445,15 @@ class ReportBuilderTests(unittest.TestCase):
                 self.assertEqual(available_report_templates(), ("aletheiauc",))
                 with self.assertRaisesRegex(ValueError, "Unknown HTML report template"):
                     HtmlReportBuilder(template="privatebrand")
+
+    def test_comsource_is_automatic_default_only_when_complete_pack_is_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.assertEqual(default_report_template(), "aletheiauc")
+            self._write_external_template(root, key="comsource")
+            with patch.dict(os.environ, {"ALETHEIAUC_REPORT_TEMPLATE_DIR": str(root)}):
+                self.assertEqual(default_report_template(), "comsource")
+                self.assertIn("Private Brand Assessment", HtmlReportBuilder().build(self.report))
 
     def test_customer_deliverable_retains_scope_identifiers_without_evidence_detail(self) -> None:
         report = AssessmentReport(

@@ -559,7 +559,7 @@ def _write_html_report(
     requested_path: str | None,
     *,
     customer_safe: bool = False,
-    template: str = "aletheiauc",
+    template: str | None = None,
 ) -> Path:
     if requested_path:
         path = Path(requested_path).expanduser()
