@@ -31,6 +31,13 @@ A template with no asset slots, such as the default dark report, requires no fil
 illustrated or branded template requires its manifest, stylesheet, and every
 file declared in its slot map.
 
+On startup, AletheiaUC also looks in `~/Downloads` for files named
+`ComSource-Private-Report-Template-*.zip`. When present, it validates and
+installs the newest archive's `comsource` pack into the default template
+directory. An unchanged archive is not re-imported; malformed archives are
+ignored and cannot replace an installed pack. This convenience import applies
+only to the default directory, not an `ALETHEIAUC_REPORT_TEMPLATE_DIR` override.
+
 ## Private company templates
 
 An authorized external `comsource` pack can be selected with:

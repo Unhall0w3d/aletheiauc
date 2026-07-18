@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -398,6 +399,16 @@ class ReportBuilderTests(unittest.TestCase):
         (package / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return package
 
+    @classmethod
+    def _write_comsource_download(cls, root: Path, filename: str) -> Path:
+        package = cls._write_external_template(root / filename.removesuffix(".zip"), key="comsource")
+        archive = root / filename
+        with zipfile.ZipFile(archive, "w") as output:
+            for path in package.rglob("*"):
+                if path.is_file():
+                    output.write(path, path.relative_to(package.parent))
+        return archive
+
     def test_human_readable_report_formatters(self) -> None:
         self.assertEqual(display_duration(42), "Less than 1 minute")
         self.assertEqual(display_duration(31_626_060), "1 year, 1 day, 1 hour, 1 minute")
@@ -638,6 +649,28 @@ class ReportBuilderTests(unittest.TestCase):
                 self.assertTrue(directory.is_dir())
 
         self.assertEqual(directory, home / ".config" / "aletheiauc" / "report-templates")
+
+    def test_newest_downloaded_comsource_pack_is_imported_automatically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            home = Path(tmpdir) / "home"
+            downloads = home / "Downloads"
+            downloads.mkdir(parents=True)
+            older = self._write_comsource_download(
+                downloads, "ComSource-Private-Report-Template-older.zip"
+            )
+            newer = self._write_comsource_download(
+                downloads, "ComSource-Private-Report-Template-newer.zip"
+            )
+            os.utime(older, ns=(1, 1))
+            os.utime(newer, ns=(2, 2))
+            with patch.dict(os.environ, {}, clear=True), patch(
+                "cisco_collab_health.reports.html.Path.home", return_value=home
+            ):
+                directory = external_template_directory()
+                marker = json.loads((directory / ".comsource-import.json").read_text())
+                self.assertTrue((directory / "comsource" / "manifest.json").is_file())
+                self.assertEqual(marker["archive"], str(newer.resolve()))
+                self.assertIn("comsource", available_report_templates())
 
     def test_comsource_is_automatic_default_only_when_complete_pack_is_installed(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

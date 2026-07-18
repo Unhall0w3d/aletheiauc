@@ -9,8 +9,13 @@ from html import escape
 import json
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
+import shutil
+import stat
+import tempfile
 from typing import Any
+import zipfile
 
 from cisco_collab_health.lifecycle import lifecycle_for, lifecycle_status, technology_for_product
 from cisco_collab_health.models.assessment import AssessmentReport
@@ -101,6 +106,8 @@ REPORT_THEMES = {
 
 EXTERNAL_TEMPLATE_DIRECTORY_ENV = "ALETHEIAUC_REPORT_TEMPLATE_DIR"
 EXTERNAL_TEMPLATE_SCHEMA_VERSION = 1
+COMSOURCE_DOWNLOAD_PATTERN = "ComSource-Private-Report-Template-*.zip"
+_COMSOURCE_IMPORT_MARKER = ".comsource-import.json"
 _REQUIRED_THEME_COLORS = ("page", "surface", "text", "muted", "accent", "cyan", "gold")
 
 
@@ -113,11 +120,91 @@ def external_template_directory() -> Path:
     directory = Path.home() / ".config" / "aletheiauc" / "report-templates"
     try:
         directory.mkdir(parents=True, exist_ok=True)
+        _import_latest_comsource_download(directory)
     except OSError:
         # The built-in report remains usable when a constrained environment
         # cannot create a per-user configuration directory.
         pass
     return directory
+
+
+def _import_latest_comsource_download(template_directory: Path) -> None:
+    """Install the newest valid downloaded ComSource pack, without reimporting it."""
+
+    downloads = Path.home() / "Downloads"
+    try:
+        archives = [path for path in downloads.glob(COMSOURCE_DOWNLOAD_PATTERN) if path.is_file()]
+        archive = max(archives, key=lambda path: (path.stat().st_mtime_ns, path.name))
+        signature = {
+            "archive": str(archive.resolve()),
+            "mtime_ns": archive.stat().st_mtime_ns,
+            "size": archive.stat().st_size,
+        }
+    except (OSError, ValueError):
+        return
+
+    target = template_directory / "comsource"
+    marker = template_directory / _COMSOURCE_IMPORT_MARKER
+    try:
+        if target.is_dir() and json.loads(marker.read_text(encoding="utf-8")) == signature:
+            return
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
+
+    try:
+        with tempfile.TemporaryDirectory(prefix=".comsource-import-", dir=template_directory) as staging_name:
+            staging = Path(staging_name)
+            pack = _extract_comsource_pack(archive, staging)
+            _load_external_template(pack / "manifest.json")
+            manifest = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+            if manifest.get("key") != "comsource":
+                return
+            backup = template_directory / ".comsource-previous"
+            if backup.exists():
+                shutil.rmtree(backup)
+            if target.exists():
+                target.replace(backup)
+            try:
+                pack.replace(target)
+            except OSError:
+                if backup.exists() and not target.exists():
+                    backup.replace(target)
+                raise
+            if backup.exists():
+                shutil.rmtree(backup)
+            marker.write_text(json.dumps(signature, sort_keys=True), encoding="utf-8")
+    except (OSError, ValueError, zipfile.BadZipFile, json.JSONDecodeError):
+        return
+
+
+def _extract_comsource_pack(archive: Path, staging: Path) -> Path:
+    """Safely extract one ``comsource`` directory from a trusted local ZIP."""
+
+    with zipfile.ZipFile(archive) as package:
+        members = package.infolist()
+        paths = {member.filename: PurePosixPath(member.filename) for member in members}
+        if any(path.is_absolute() or ".." in path.parts for path in paths.values()):
+            raise ValueError("Template archive contains an unsafe path.")
+        manifests = [
+            path for path in paths.values()
+            if path.name == "manifest.json" and len(path.parts) >= 2 and path.parts[-2] == "comsource"
+        ]
+        if len(manifests) != 1:
+            raise ValueError("Template archive must contain exactly one comsource/manifest.json.")
+        source_root = manifests[0].parent
+        destination = staging / "comsource"
+        for member in members:
+            path = paths[member.filename]
+            if path.parts[:len(source_root.parts)] != source_root.parts or member.is_dir():
+                continue
+            if stat.S_ISLNK(member.external_attr >> 16):
+                raise ValueError("Template archive cannot contain symbolic links.")
+            relative = Path(*path.parts[len(source_root.parts):])
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with package.open(member) as source, target.open("wb") as output:
+                shutil.copyfileobj(source, output)
+    return destination
 
 
 def _manifest_mapping(value: Any, field: str) -> dict[str, Any]:
