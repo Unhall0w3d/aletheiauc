@@ -56,6 +56,12 @@ class CucmPlatformSummaryTests(unittest.TestCase):
         self.assertEqual(disk["common_partition_total_kb"], "100")
         self.assertEqual(disk["common_partition_free_kb"], "8")
         self.assertEqual(disk["common_partition_used_kb"], "92")
+        self.assertEqual(disk["common_partition_capacity_evaluation"], "evaluated")
+
+    def test_common_partition_capacity_is_not_evaluated_when_show_status_is_unrecognized(self) -> None:
+        disk = _summary("show status", "Disk/logging unavailable\n")
+
+        self.assertEqual(disk["common_partition_capacity_evaluation"], "not_evaluated")
 
     def test_drs_history_summary_keeps_only_an_unambiguous_success_date(self) -> None:
         history = _summary(

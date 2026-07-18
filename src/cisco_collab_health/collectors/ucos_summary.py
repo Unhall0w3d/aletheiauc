@@ -51,11 +51,14 @@ def disk_usage_summary(output: str) -> dict[str, str]:
     if common_capacity:
         summary.update(
             {
+                "common_partition_capacity_evaluation": "evaluated",
                 "common_partition_total_kb": common_capacity.group("total"),
                 "common_partition_free_kb": common_capacity.group("free"),
                 "common_partition_used_kb": common_capacity.group("used"),
             }
         )
+    else:
+        summary["common_partition_capacity_evaluation"] = "not_evaluated"
     return summary
 
 

@@ -1110,7 +1110,15 @@ class CucmPlatformHealthRule:
     def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
         checks = [check for check in facts.platform_checks if check.source == "CUCM.UCOS.CLI"]
         findings: list[HealthFinding] = []
+        common_capacity = _partition_free_capacity(checks, "common_partition_free_kb")
+        capacity_by_check = {id(check): free_kb for check, free_kb in common_capacity}
         common_disk = _partition_usage_above(checks, "common_partition_usage_percent", 90)
+        common_disk = [
+            (check, usage)
+            for check, usage in common_disk
+            if capacity_by_check.get(id(check), self._COMMON_PARTITION_TARGET_KB)
+            >= self._COMMON_PARTITION_TARGET_KB
+        ]
         if common_disk:
             findings.append(
                 _cucm_cli_finding(
@@ -1125,7 +1133,6 @@ class CucmPlatformHealthRule:
                     "Optional operator action: record the current RTMT LogPartition low/high watermarks, temporarily set low to 45% and high to 50%, allow one to two hours for oldest-first log cleanup, verify capacity, then restore the original values. This tool never changes watermarks. Follow Cisco's procedure: https://www.cisco.com/c/en/us/support/docs/unified-communications/unified-communications-manager-callmanager/221038-troubleshoot-full-common-partition-in-cu.html . If space remains insufficient, review Cisco's maintenance-window guidance for the Free Common Space COP.",
                 )
             )
-        common_capacity = _partition_free_capacity(checks, "common_partition_free_kb")
         below_minimum = [
             (check, free_kb)
             for check, free_kb in common_capacity
@@ -1151,11 +1158,21 @@ class CucmPlatformHealthRule:
             if self._COMMON_PARTITION_MINIMUM_KB <= free_kb < self._COMMON_PARTITION_TARGET_KB
         ]
         if below_target:
+            target_severity = (
+                FindingSeverity.CRITICAL
+                if any(_common_partition_usage(check) >= 95 for check, _ in below_target)
+                else FindingSeverity.WARNING
+            )
             findings.append(
                 _cucm_cli_finding(
                     "common_partition_upgrade_target",
-                    FindingSeverity.WARNING,
-                    "CUCM common partition is below the 32 GiB upgrade-planning target",
+                    target_severity,
+                    (
+                        "CUCM common partition utilization is critically high and below "
+                        "the 32 GiB upgrade-planning target"
+                        if target_severity == FindingSeverity.CRITICAL
+                        else "CUCM common partition is below the 32 GiB upgrade-planning target"
+                    ),
                     [
                         _common_partition_capacity_fact(check, free_kb)
                         for check, free_kb in sorted(below_target, key=lambda item: item[0].node)
@@ -1331,12 +1348,19 @@ def _partition_free_capacity(
 def _common_partition_capacity_fact(check: PlatformCheckFact, free_kb: int) -> str:
     total_kb = check.details.get("common_partition_total_kb", "")
     free_gib = free_kb / (1024 * 1024)
-    if total_kb.isdigit():
-        return (
+    capacity_text = (
             f"{check.node}: {free_gib:.1f} GiB free of "
             f"{int(total_kb) / (1024 * 1024):.1f} GiB common/logging partition"
-        )
-    return f"{check.node}: {free_gib:.1f} GiB free common/logging partition"
+        if total_kb.isdigit()
+        else f"{check.node}: {free_gib:.1f} GiB free common/logging partition"
+    )
+    usage = _common_partition_usage(check)
+    return f"{capacity_text} ({usage}% used)" if usage >= 0 else capacity_text
+
+
+def _common_partition_usage(check: PlatformCheckFact) -> int:
+    value = check.details.get("common_partition_usage_percent", "")
+    return int(value) if value.isdigit() else -1
 
 
 class CucPlatformStatusRule:

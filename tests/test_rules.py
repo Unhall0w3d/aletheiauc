@@ -390,6 +390,46 @@ class CucPlatformRulesTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, FindingSeverity.CRITICAL)
         self.assertIn("24.0 GiB free of 80.0 GiB", findings[0].facts[0])
 
+    def test_cucm_platform_rule_combines_high_utilization_with_low_common_capacity(self) -> None:
+        findings = CucmPlatformHealthRule().evaluate(
+            AssessmentFacts(
+                platform_checks=[
+                    PlatformCheckFact(
+                        "cucm-sub", "show status", "collected",
+                        {
+                            "common_partition_usage_percent": "99",
+                            "common_partition_free_kb": str(30 * 1024 * 1024),
+                            "common_partition_total_kb": str(80 * 1024 * 1024),
+                        }, "CUCM.UCOS.CLI",
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].rule_id, "cucm.platform_health.common_partition_upgrade_target")
+        self.assertEqual(findings[0].severity, FindingSeverity.CRITICAL)
+        self.assertIn("99% used", findings[0].facts[0])
+
+    def test_cucm_platform_rule_respects_common_capacity_boundaries(self) -> None:
+        checks = [
+            PlatformCheckFact(
+                "cucm-pub", "show status", "collected",
+                {"common_partition_free_kb": str(25 * 1024 * 1024)}, "CUCM.UCOS.CLI",
+            ),
+            PlatformCheckFact(
+                "cucm-sub", "show status", "collected",
+                {"common_partition_free_kb": str(32 * 1024 * 1024)}, "CUCM.UCOS.CLI",
+            ),
+        ]
+
+        findings = CucmPlatformHealthRule().evaluate(AssessmentFacts(platform_checks=checks))
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].rule_id, "cucm.platform_health.common_partition_upgrade_target")
+        self.assertEqual(findings[0].severity, FindingSeverity.WARNING)
+        self.assertIn("cucm-pub", findings[0].facts[0])
+
     def test_cucm_platform_rule_flags_common_capacity_below_planning_target(self) -> None:
         findings = CucmPlatformHealthRule().evaluate(
             AssessmentFacts(
