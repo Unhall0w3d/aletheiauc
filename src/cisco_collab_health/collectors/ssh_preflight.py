@@ -9,7 +9,10 @@ from typing import Protocol, TypeVar
 
 from cisco_collab_health.config import normalize_node_address
 from cisco_collab_health.models.runtime import CollectionContext
-from cisco_collab_health.transport.ssh import is_ssh_authentication_failure
+from cisco_collab_health.transport.ssh import (
+    is_ssh_authentication_failure,
+    is_ssh_host_key_enrollment_retry,
+)
 
 
 T = TypeVar("T")
@@ -50,6 +53,20 @@ def preflight_ssh_nodes(
             with session_factory(node_context):
                 pass
         except Exception as exc:
+            if is_ssh_host_key_enrollment_retry(exc):
+                retry_error = _retry_host_key_enrollment(node_context, node, session_factory)
+                if retry_error is None:
+                    _progress(context, f"SSH preflight complete after host-key retry: {node}")
+                    ready.append(
+                        replace(
+                            node_context,
+                            accept_new_host_key=False,
+                            host_key_approval=None,
+                            ssh_password_retry=None,
+                        )
+                    )
+                    continue
+                exc = retry_error
             retried_context = _retry_authentication(
                 context, node_context, node, exc, session_factory
             )
@@ -72,6 +89,21 @@ def preflight_ssh_nodes(
             )
         )
     return ready, warnings
+
+
+def _retry_host_key_enrollment(
+    node_context: CollectionContext, node: str, session_factory: SessionFactory
+) -> Exception | None:
+    """Give a delayed first-use host-key approval one fresh SSH preflight attempt."""
+
+    _progress(node_context, f"SSH host-key enrollment did not complete on {node}; retrying once")
+    try:
+        with session_factory(node_context):
+            pass
+    except Exception as exc:
+        _progress(node_context, f"SSH host-key retry failed: {node}")
+        return exc
+    return None
 
 
 def _retry_authentication(

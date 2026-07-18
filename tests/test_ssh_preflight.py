@@ -11,6 +11,7 @@ from cisco_collab_health.collectors.ssh_preflight import (
     preflight_ssh_nodes,
 )
 from cisco_collab_health.models.runtime import CollectionContext
+from cisco_collab_health.transport.ssh import SshHostKeyEnrollmentRetry
 
 
 class FakeSession:
@@ -89,6 +90,32 @@ class SshPreflightTests(unittest.TestCase):
             ready[0].node_platform_passwords,
             {"192.0.2.11": "subscriber-password"},
         )
+
+    def test_preflight_retries_once_after_delayed_host_key_approval(self) -> None:
+        attempts: list[str] = []
+
+        class DelayedApprovalSession:
+            def __init__(self, context: CollectionContext) -> None:
+                self.context = context
+
+            def __enter__(self) -> "DelayedApprovalSession":
+                attempts.append(self.context.publisher_ip or "unknown")
+                if len(attempts) == 1:
+                    raise SshHostKeyEnrollmentRetry("first-use session expired")
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+        ready, warnings = preflight_ssh_nodes(
+            CollectionContext(host_key_approval=lambda *_: True),
+            ("192.0.2.11",),
+            DelayedApprovalSession,
+        )
+
+        self.assertEqual(attempts, ["192.0.2.11", "192.0.2.11"])
+        self.assertFalse(warnings)
+        self.assertEqual([item.publisher_ip for item in ready], ["192.0.2.11"])
 
     def test_collection_is_bounded_and_preserves_node_order(self) -> None:
         contexts = [CollectionContext(publisher_ip=f"192.0.2.{item}") for item in range(10, 13)]

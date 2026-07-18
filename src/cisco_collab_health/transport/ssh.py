@@ -41,6 +41,10 @@ class SshCommandTimeout(TimeoutError):
         self.paged = paged
 
 
+class SshHostKeyEnrollmentRetry(ConnectionError):
+    """An approved first-use key did not complete its initial SSH preflight."""
+
+
 def is_ssh_authentication_failure(exc: Exception) -> bool:
     """Identify authentication failures without treating network failures as credentials."""
 
@@ -48,6 +52,12 @@ def is_ssh_authentication_failure(exc: Exception) -> bool:
         exc.__class__.__name__ in _AUTHENTICATION_FAILURES
         or "authentication failed" in str(exc).lower()
     )
+
+
+def is_ssh_host_key_enrollment_retry(exc: Exception) -> bool:
+    """Identify a preflight failure that occurred after host-key approval."""
+
+    return isinstance(exc, SshHostKeyEnrollmentRetry)
 
 
 def ssh_host_key_fingerprint(key: Any) -> str:
@@ -112,28 +122,36 @@ class UcosSshSession:
                 self.client.set_missing_host_key_policy(paramiko.RejectPolicy())
         else:
             self.client = self.client_factory()
-        self.client.connect(
-            hostname=host,
-            username=self.context.os_username,
-            password=self.context.os_password,
-            timeout=self.context.timeout_seconds,
-            banner_timeout=self.context.timeout_seconds,
-            auth_timeout=self.context.timeout_seconds,
-            look_for_keys=False,
-            allow_agent=False,
-        )
-        if self.client_factory is None and (
-            self._host_key_policy is not None and self._host_key_policy.approved
-        ):
-            self.client.save_host_keys(str(Path.home() / ".ssh" / "known_hosts"))
-        transport = self.client.get_transport()
-        if transport is None:
-            raise RuntimeError("SSH transport was not established")
-        self.channel = transport.open_session()
-        self.channel.get_pty(term="vt100", width=200, height=1000)
-        self.channel.invoke_shell()
-        self._read_until_prompt()
-        return self
+        try:
+            self.client.connect(
+                hostname=host,
+                username=self.context.os_username,
+                password=self.context.os_password,
+                timeout=self.context.timeout_seconds,
+                banner_timeout=self.context.timeout_seconds,
+                auth_timeout=self.context.timeout_seconds,
+                look_for_keys=False,
+                allow_agent=False,
+            )
+            if self.client_factory is None and (
+                self._host_key_policy is not None and self._host_key_policy.approved
+            ):
+                self.client.save_host_keys(str(Path.home() / ".ssh" / "known_hosts"))
+            transport = self.client.get_transport()
+            if transport is None:
+                raise RuntimeError("SSH transport was not established")
+            self.channel = transport.open_session()
+            self.channel.get_pty(term="vt100", width=200, height=1000)
+            self.channel.invoke_shell()
+            self._read_until_prompt()
+            return self
+        except Exception as exc:
+            self.__exit__()
+            if self._host_key_policy is not None and self._host_key_policy.approved:
+                raise SshHostKeyEnrollmentRetry(
+                    "SSH host key was approved, but the first preflight session did not complete"
+                ) from exc
+            raise
 
     def __exit__(self, *_: object) -> None:
         if self.channel is not None:

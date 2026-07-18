@@ -29,6 +29,11 @@ commands within each node's shell remain strictly sequential. Use
 `--ssh-parallel-workers 1` to disable node-level parallelism, or choose another
 bounded worker count for a suitable environment.
 
+If an operator approves a new host key but waits long enough for that initial
+SSH preflight to expire, AletheiaUC closes the failed session and retries that
+same node once. The retry remains sequential and presents normal host-key
+verification; it does not trust or save a key without approval.
+
 If this preflight receives an SSH authentication failure, an interactive run
 offers one node-specific Platform/CLI password retry. The replacement is used
 only for that normalized node address. When credential saving is enabled, a
