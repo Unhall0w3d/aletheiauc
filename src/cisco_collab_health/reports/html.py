@@ -105,12 +105,19 @@ _REQUIRED_THEME_COLORS = ("page", "surface", "text", "muted", "accent", "cyan", 
 
 
 def external_template_directory() -> Path:
-    """Return the user-controlled directory containing optional private template packs."""
+    """Return the optional-template directory, creating the default location if needed."""
 
     override = os.environ.get(EXTERNAL_TEMPLATE_DIRECTORY_ENV)
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".config" / "aletheiauc" / "report-templates"
+    directory = Path.home() / ".config" / "aletheiauc" / "report-templates"
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # The built-in report remains usable when a constrained environment
+        # cannot create a per-user configuration directory.
+        pass
+    return directory
 
 
 def _manifest_mapping(value: Any, field: str) -> dict[str, Any]:

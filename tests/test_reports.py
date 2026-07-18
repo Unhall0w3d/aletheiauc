@@ -45,6 +45,7 @@ from cisco_collab_health.reports.html import (
     _theme_asset_data_uri,
     available_report_templates,
     default_report_template,
+    external_template_directory,
 )
 from cisco_collab_health.reports.json import JsonReportBuilder
 from cisco_collab_health.reports.reconciliation import (
@@ -626,6 +627,17 @@ class ReportBuilderTests(unittest.TestCase):
                 self.assertEqual(available_report_templates(), ("aletheiauc",))
                 with self.assertRaisesRegex(ValueError, "Unknown HTML report template"):
                     HtmlReportBuilder(template="privatebrand")
+
+    def test_default_external_template_directory_is_created_when_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            home = Path(tmpdir) / "home"
+            with patch.dict(os.environ, {}, clear=True), patch(
+                "cisco_collab_health.reports.html.Path.home", return_value=home
+            ):
+                directory = external_template_directory()
+                self.assertTrue(directory.is_dir())
+
+        self.assertEqual(directory, home / ".config" / "aletheiauc" / "report-templates")
 
     def test_comsource_is_automatic_default_only_when_complete_pack_is_installed(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

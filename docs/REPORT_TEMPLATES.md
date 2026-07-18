@@ -23,8 +23,11 @@ The generic renderer and shared report structure belong in source control.
 Company identity, brand-specific CSS, metadata, and artwork belong in an
 external data-only pack. The default installation directory is
 `~/.config/aletheiauc/report-templates/`; set
-`ALETHEIAUC_REPORT_TEMPLATE_DIR` to use another parent directory. A template
-with no asset slots, such as the default dark report, requires no files; an
+`ALETHEIAUC_REPORT_TEMPLATE_DIR` to use another parent directory. A script
+run creates the default directory automatically when it is missing, so an
+operator can install an approved pack there without first creating folders.
+An alternate environment-controlled directory is not created automatically.
+A template with no asset slots, such as the default dark report, requires no files; an
 illustrated or branded template requires its manifest, stylesheet, and every
 file declared in its slot map.
 
