@@ -1102,6 +1102,11 @@ class CucmPlatformHealthRule:
 
     rule_id = "cucm.platform_health"
 
+    # Cisco publishes 25 GB as the pre-upgrade minimum. Keep a separate,
+    # conservative planning target because actual prerequisites can be higher.
+    _COMMON_PARTITION_MINIMUM_KB = 25 * 1024 * 1024
+    _COMMON_PARTITION_TARGET_KB = 32 * 1024 * 1024
+
     def evaluate(self, facts: AssessmentFacts) -> list[HealthFinding]:
         checks = [check for check in facts.platform_checks if check.source == "CUCM.UCOS.CLI"]
         findings: list[HealthFinding] = []
@@ -1111,7 +1116,7 @@ class CucmPlatformHealthRule:
                 _cucm_cli_finding(
                     "common_partition_usage",
                     FindingSeverity.CRITICAL if any(value >= 95 for _, value in common_disk) else FindingSeverity.WARNING,
-                    "CUCM common/logging partition utilization is critically high",
+                    "CUCM common/logging partition utilization is high",
                     [
                         f"{check.node}: {value}% common/logging partition"
                         for check, value in sorted(common_disk, key=lambda item: item[0].node)
@@ -1120,19 +1125,43 @@ class CucmPlatformHealthRule:
                     "Optional operator action: record the current RTMT LogPartition low/high watermarks, temporarily set low to 45% and high to 50%, allow one to two hours for oldest-first log cleanup, verify capacity, then restore the original values. This tool never changes watermarks. Follow Cisco's procedure: https://www.cisco.com/c/en/us/support/docs/unified-communications/unified-communications-manager-callmanager/221038-troubleshoot-full-common-partition-in-cu.html . If space remains insufficient, review Cisco's maintenance-window guidance for the Free Common Space COP.",
                 )
             )
-        active_disk = _partition_usage_above(checks, "active_partition_usage_percent", 90)
-        if active_disk:
+        common_capacity = _partition_free_capacity(checks, "common_partition_free_kb")
+        below_minimum = [
+            (check, free_kb)
+            for check, free_kb in common_capacity
+            if free_kb < self._COMMON_PARTITION_MINIMUM_KB
+        ]
+        if below_minimum:
             findings.append(
                 _cucm_cli_finding(
-                    "active_partition_usage",
-                    FindingSeverity.CRITICAL if any(value >= 95 for _, value in active_disk) else FindingSeverity.WARNING,
-                    "CUCM active partition utilization is critically high",
+                    "common_partition_upgrade_minimum",
+                    FindingSeverity.CRITICAL,
+                    "CUCM common partition capacity is below Cisco's upgrade minimum",
                     [
-                        f"{check.node}: {value}% active partition"
-                        for check, value in sorted(active_disk, key=lambda item: item[0].node)
+                        _common_partition_capacity_fact(check, free_kb)
+                        for check, free_kb in sorted(below_minimum, key=lambda item: item[0].node)
                     ],
-                    "High active-partition utilization requires engineering review and is not addressed by common/logging watermark cleanup.",
-                    "Preserve required evidence and follow Cisco's partition troubleshooting procedure before deleting files or changing system storage. https://www.cisco.com/c/en/us/support/docs/unified-communications/unified-communications-manager-callmanager/221038-troubleshoot-full-common-partition-in-cu.html",
+                    "Cisco documents 25 GB of free common-partition space as the pre-upgrade minimum. This node can block an upgrade until capacity is recovered or expanded.",
+                    "Plan remediation before upgrade. Review retained logs, inactive TFTP loads, music-on-hold, and locale content; use Cisco's approved common-partition procedure during a maintenance window and verify free space again. https://www.cisco.com/c/en/us/td/docs/voice_ip_comm/cucm/upgrade/15/cucm_b_upgrade-and-migration-guide_15/cucm_m_pre-upgrade-tasks-15.html",
+                )
+            )
+        below_target = [
+            (check, free_kb)
+            for check, free_kb in common_capacity
+            if self._COMMON_PARTITION_MINIMUM_KB <= free_kb < self._COMMON_PARTITION_TARGET_KB
+        ]
+        if below_target:
+            findings.append(
+                _cucm_cli_finding(
+                    "common_partition_upgrade_target",
+                    FindingSeverity.WARNING,
+                    "CUCM common partition is below the 32 GiB upgrade-planning target",
+                    [
+                        _common_partition_capacity_fact(check, free_kb)
+                        for check, free_kb in sorted(below_target, key=lambda item: item[0].node)
+                    ],
+                    "This meets Cisco's published 25 GB minimum, but recent UC upgrades can require more space depending on the release, installed content, and deployment footprint.",
+                    "Treat this as a potential upgrade blocker: validate the release-specific pre-upgrade check, reclaim common-partition space where appropriate, or plan storage expansion before the maintenance window. The 32 GiB target is AletheiaUC's conservative planning threshold, not a universal Cisco requirement.",
                 )
             )
         ntp_unsynced = [
@@ -1286,6 +1315,28 @@ def _partition_usage_above(
         and check.details.get(detail_name, "").isdigit()
         and int(check.details[detail_name]) > threshold
     ]
+
+
+def _partition_free_capacity(
+    checks: list[PlatformCheckFact], detail_name: str
+) -> list[tuple[PlatformCheckFact, int]]:
+    return [
+        (check, int(check.details[detail_name]))
+        for check in checks
+        if check.check_name == "show status"
+        and check.details.get(detail_name, "").isdigit()
+    ]
+
+
+def _common_partition_capacity_fact(check: PlatformCheckFact, free_kb: int) -> str:
+    total_kb = check.details.get("common_partition_total_kb", "")
+    free_gib = free_kb / (1024 * 1024)
+    if total_kb.isdigit():
+        return (
+            f"{check.node}: {free_gib:.1f} GiB free of "
+            f"{int(total_kb) / (1024 * 1024):.1f} GiB common/logging partition"
+        )
+    return f"{check.node}: {free_gib:.1f} GiB free common/logging partition"
 
 
 class CucPlatformStatusRule:

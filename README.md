@@ -580,6 +580,14 @@ date formats remain private raw evidence rather than being guessed at. The
 report separately marks unavailable, incomplete, and unparseable history as
 not evaluated; it does not present those states as a missing backup.
 
+For CUCM upgrade readiness, `show status` also supplies free space from the
+common/logging partition (`/common`). Less than Cisco's published 25 GiB
+minimum is a critical upgrade blocker; 25--32 GiB is an upgrade-planning
+warning. The 32 GiB threshold is deliberately conservative because a
+release-specific prerequisite check and installed firmware, locale, and media
+content can require more space. Active and inactive partition utilization
+remains diagnostic evidence and does not independently create this finding.
+
 During CUC diagnostic capture, AletheiaUC first uses `show network cluster` on
 the publisher, then applies its bounded, read-only platform catalog to each
 discovered member. Experimental Informix validation runs only on the publisher.

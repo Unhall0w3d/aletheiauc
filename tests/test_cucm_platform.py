@@ -53,6 +53,9 @@ class CucmPlatformSummaryTests(unittest.TestCase):
         self.assertEqual(version["installed_software_options"], "security_patch.cop|feature.cop")
         self.assertEqual(disk["active_partition_usage_percent"], "5")
         self.assertEqual(disk["common_partition_usage_percent"], "92")
+        self.assertEqual(disk["common_partition_total_kb"], "100")
+        self.assertEqual(disk["common_partition_free_kb"], "8")
+        self.assertEqual(disk["common_partition_used_kb"], "92")
 
     def test_drs_history_summary_keeps_only_an_unambiguous_success_date(self) -> None:
         history = _summary(

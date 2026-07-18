@@ -117,6 +117,16 @@ database-replication runtime state, active core files, and service list. The
 collector retains raw output and only promotes conservative NTP, DRS,
 replication, and core-file conditions into findings. Fresh CUCM artifacts remain
 required to validate output variants and thresholds before expanding this pilot.
+
+`show status` additionally supplies CUCM common/logging (`/common`) capacity
+for local upgrade-readiness evaluation. Less than 25 GiB free is a critical
+condition because it is below Cisco's published pre-upgrade minimum; 25--32
+GiB is a warning based on AletheiaUC's conservative planning target. The target
+is not presented as a universal Cisco requirement because actual space needs
+vary with the release and installed content. Active and inactive partition
+utilization is retained as engineering evidence only and is not used as an
+upgrade-readiness finding.
+
 For DRS backup history, ISO and U.S.-style dates are considered only on rows
 that explicitly report success. AletheiaUC does not infer dates from failed,
 ambiguous, or unrecognized localized rows; those remain available only as

@@ -28,7 +28,7 @@ def version_summary(output: str, *, active: bool) -> dict[str, str]:
 
 
 def disk_usage_summary(output: str) -> dict[str, str]:
-    """Extract explicit UCOS active and common/logging partition utilization."""
+    """Extract UCOS partition utilization and common/logging capacity when present."""
 
     partitions = {
         match.group("partition").lower(): int(match.group("usage"))
@@ -44,6 +44,18 @@ def disk_usage_summary(output: str) -> dict[str, str]:
         "disk_warning_count": str(sum(value >= 90 for value in values)),
         "disk_critical_count": str(sum(value >= 95 for value in values)),
     }
+    common_capacity = re.search(
+        r"(?im)^Disk/logging\s+(?P<total>\d+)K\s+(?P<free>\d+)K\s+(?P<used>\d+)K",
+        output,
+    )
+    if common_capacity:
+        summary.update(
+            {
+                "common_partition_total_kb": common_capacity.group("total"),
+                "common_partition_free_kb": common_capacity.group("free"),
+                "common_partition_used_kb": common_capacity.group("used"),
+            }
+        )
     return summary
 
 
