@@ -28,8 +28,10 @@ class TechnologyPlugin(Protocol):
 
 
 _PLUGIN_MODULES = {
+    "cer": "cisco_collab_health.technologies.cer.plugin",
     "cuc": "cisco_collab_health.technologies.cuc.plugin",
     "cucm": "cisco_collab_health.technologies.cucm.plugin",
+    "imp": "cisco_collab_health.technologies.imp.plugin",
 }
 
 

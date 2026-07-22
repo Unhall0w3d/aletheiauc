@@ -47,11 +47,12 @@ class CapturedHttpClient:
         interface: str,
         operation: str,
         credential_kind: str = "gui",
+        accept: str = "application/json",
     ) -> CapturedHttpResponse:
         started_at = datetime.now(UTC)
         started_clock = monotonic()
         headers = self._auth_headers(context, credential_kind)
-        headers["Accept"] = "application/json"
+        headers["Accept"] = accept
         artifact_request = f"GET {endpoint} HTTP/1.1\n\n"
         request = urllib.request.Request(endpoint, headers=headers, method="GET")
 

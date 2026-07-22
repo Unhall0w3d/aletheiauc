@@ -469,11 +469,22 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(load_assessment_profiles(config_dir), {})
             self.assertEqual(load_profile_names(config_dir), ["cluster-a"])
 
-    def test_cer_profiles_are_storable_but_not_assessable_yet(self) -> None:
+    def test_cer_profiles_are_assessable(self) -> None:
         assessment = AssessmentProfile("emergency", (AssessmentTarget("cer-hq", "cer", "CER-HQ"),))
 
-        with self.assertRaisesRegex(ValueError, "Cisco Emergency Responder"):
-            resolve_assessment_targets(assessment, use_system_keyring=False)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            inputs = iter(["192.0.2.40", "cer-api", "admin"])
+            passwords = iter(["gui-secret", "os-secret"])
+            resolved = resolve_assessment_targets(
+                assessment,
+                config_dir=config_dir,
+                input_func=lambda prompt: next(inputs),
+                getpass_func=lambda prompt: next(passwords),
+                use_system_keyring=False,
+            )
+
+        self.assertEqual(resolved[0][0].technology, "cer")
 
 
 if __name__ == "__main__":

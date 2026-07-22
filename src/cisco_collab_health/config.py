@@ -61,7 +61,7 @@ class ProfileSelection:
 
 
 SUPPORTED_TECHNOLOGIES = frozenset({"cucm", "cuc", "cer", "imp"})
-ASSESSABLE_TECHNOLOGIES = frozenset({"cucm", "cuc"})
+ASSESSABLE_TECHNOLOGIES = frozenset({"cucm", "cuc", "cer", "imp"})
 TECHNOLOGY_LABELS = {
     "cucm": "Cisco Unified Communications Manager",
     "cuc": "Cisco Unity Connection",

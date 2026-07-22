@@ -599,6 +599,18 @@ retains the HTML reports and prints the exact installation command. Use
 `--no-pdf-report` to skip PDF output deliberately. Diagnostic review ZIPs include
 engineering and customer-facing HTML and PDF variants for every installed theme.
 
+### IM&P and Emergency Responder scaffolding
+
+IM&P and Cisco Emergency Responder (CER) can now be selected as assessment
+targets. Their initial collectors run only in diagnostic mode. IM&P collects a
+bounded, read-only UCOS publisher baseline: status, version, cluster/network,
+NTP, services, active cores, and diagnostics. CER collects the equivalent UCOS
+baseline plus its documented read-only API authentication-status endpoint. This
+first slice deliberately does not infer IM&P presence health from client-facing
+presence APIs or perform CER configuration changes. Additional API resources,
+cluster discovery, and technology-specific health rules require live output
+validation before expansion.
+
 During CUC diagnostic capture, AletheiaUC first uses `show network cluster` on
 the publisher, then applies its bounded, read-only platform catalog to each
 discovered member. Experimental Informix validation runs only on the publisher.

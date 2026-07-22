@@ -142,3 +142,19 @@ uses the same explicit-success/date recognition boundary as CUCM and reports a
 stale newest success only when a date is unambiguous.
 An unknown SSH host key remains rejected unless the operator explicitly enables
 first-use enrollment after out-of-band fingerprint verification.
+
+## IM&P and CER diagnostic scaffolding
+
+IM&P and CER collection is technology-gated and runs only when diagnostic capture
+is selected. Both use bounded, read-only UCOS publisher commands: `show status`,
+active/inactive version, `show network cluster`, `show network eth0 detail`, NTP
+status, service list, active cores, and `utils diagnose test`. Each command has
+an explicit timeout and retains raw output privately for later parser validation.
+
+CER also calls only its documented HTTPS read-only authentication-status resource,
+`/cerappservices/export/authenticate/status`, with XML acceptance. The initial
+implementation records response status as evidence and does not treat an API
+response as a service-health determination. IM&P's published interfaces are
+client/presence oriented, so this slice intentionally avoids unvalidated API
+health queries. No CER or IM&P collector writes configuration or runs state-
+changing CLI commands.
