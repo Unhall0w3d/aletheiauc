@@ -132,10 +132,38 @@ the same run.
 
 ## Quick Start
 
-Create a cross-platform development/test environment from a checkout:
+Create a cross-platform development/test environment from a checkout. A
+virtual environment is recommended so the Python dependencies and the local
+PDF-rendering browser are kept with this checkout.
+
+Linux/macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+```
+
+Windows PowerShell:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+```
+
+The final command is required once per virtual environment when PDF reports
+are enabled (the default). It downloads Playwright's local Chromium runtime;
+report data remains local. If HTML-only output is sufficient, omit that command
+and run AletheiaUC with `--no-pdf-report`.
+
+For an already activated environment, the required setup is:
 
 ```bash
 python -m pip install -r requirements.txt
+python -m playwright install chromium
 ```
 
 Make the launcher executable:
@@ -593,11 +621,15 @@ remains diagnostic evidence and does not independently create this finding.
 Each HTML report also produces an adjacent engineering or customer-facing PDF.
 PDF rendering is local: AletheiaUC uses Playwright's headless Chromium against
 the self-contained report HTML, so no assessment data is sent to a rendering
-service. After `pip install -r requirements.txt`, install the local browser once
-with `python -m playwright install chromium`. If it is unavailable, the run
-retains the HTML reports and prints the exact installation command. Use
-`--no-pdf-report` to skip PDF output deliberately. Diagnostic review ZIPs include
-engineering and customer-facing HTML and PDF variants for every installed theme.
+service. Installing the Python `playwright` package is not sufficient: after
+`python -m pip install -r requirements.txt`, install the matching browser once
+per virtual environment with `python -m playwright install chromium`. Run that
+command using the same Python/virtual environment used to launch AletheiaUC.
+If Chromium is unavailable, the run retains the HTML reports and prints the
+exact installation command. Use `--no-pdf-report` to deliberately skip PDF
+output, including on hosts where the local Chromium runtime cannot be installed.
+Diagnostic review ZIPs include engineering and customer-facing HTML and PDF
+variants for every installed theme when PDF output is enabled.
 
 ### IM&P and Emergency Responder scaffolding
 

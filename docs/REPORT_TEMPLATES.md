@@ -160,6 +160,23 @@ always includes:
 - `reports/aletheiauc/engineering.html`
 - `reports/aletheiauc/customer-facing.html`
 
+### Local PDF rendering prerequisite
+
+Every selected template can also be rendered as engineering and customer-facing
+PDF output. This uses Playwright with a local Chromium binary; no report data is
+sent to an external rendering service. Installing `requirements.txt` installs
+the Playwright Python package, but the browser binary is a separate one-time
+install for each virtual environment:
+
+```bash
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+```
+
+Use the same virtual environment for these commands and for AletheiaUC. On a
+host where PDF generation is intentionally unavailable, pass
+`--no-pdf-report`; the HTML reports and diagnostic bundle are still generated.
+
 With an authorized external ComSource pack installed, it additionally includes:
 
 - `reports/comsource/engineering.html`
