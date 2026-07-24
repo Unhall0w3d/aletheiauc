@@ -511,6 +511,18 @@ class HtmlReportBuilder:
         cluster_section = self._cluster_section(report)
         lifecycle_section = self._software_lifecycle_section(report)
         node_rows = self._node_rows(report)
+        discovered_nodes_section = f"""
+    <section>
+      <h2>Discovered Nodes</h2>
+      {"" if self.customer_safe else self._node_source_caption(report)}
+      <table>
+        <thead><tr><th>Technology</th><th>Name</th><th>Address</th><th>Role</th><th>Reachable</th></tr></thead>
+        <tbody>
+          {node_rows}
+        </tbody>
+      </table>
+    </section>
+"""
         device_rows = self._device_rows(report)
         device_model_rows = self._device_model_summary_rows(report)
         device_load_rows = self._device_load_summary_rows(report)
@@ -634,42 +646,61 @@ class HtmlReportBuilder:
             "findings",
         )
         scope_chapter = self._chapter_header(
-            "03 / SCOPE",
-            "Scope and Method",
-            "Targets, data sources, boundaries, and confidence",
+            "03 / CONTEXT",
+            "Assessment Context",
+            "Targets assessed, scope, boundaries, and confidence",
             "scope",
         )
         infrastructure_chapter = self._chapter_header(
-            "04 / INFRASTRUCTURE",
-            "Infrastructure and Inventory",
-            "CUCM and Unity Connection topology, objects, and runtime state",
+            "04 / TECHNOLOGY HEALTH",
+            "Technology Health",
+            "Topology, platform condition, recovery readiness, and software lifecycle",
             "infrastructure",
         )
         analysis_chapter = self._chapter_header(
-            "04 / ANALYSIS" if self.customer_safe else "05 / ANALYSIS",
-            "Discovery and Analysis",
-            "Collection depth across topology, services, firmware, and configuration",
+            "05 / ENDPOINTS AND CALL CONTROL",
+            "Endpoint and Call-Control Health",
+            "Endpoint estate, registrations, firmware, security posture, and calling resources",
             "analysis",
         )
+        operations_chapter = self._chapter_header(
+            "06 / PLATFORM OPERATIONS",
+            "Platform Operations and Capacity",
+            "Services, performance, and Call Manager runtime capacity",
+            "analysis",
+        )
+        configuration_chapter = self._chapter_header(
+            "07 / CONFIGURATION REVIEW",
+            "Configuration and Design Review",
+            "Routing, security, integrations, and media-resource topology",
+            "analysis",
+        )
+        trust_chapter = self._chapter_header(
+            "08 / SECURITY AND TRUST",
+            "Security and Trust",
+            "Certificate validity, trust relationships, and security posture",
+            "analysis",
+        )
+        appendix_chapter = self._chapter_header(
+            "09 / REFERENCE APPENDICES",
+            "Reference Data",
+            "Detailed endpoint configuration and runtime registration records",
+            "evidence",
+        )
         evidence_chapter = self._chapter_header(
-            "05 / EVIDENCE" if self.customer_safe else "06 / EVIDENCE",
+            "10 / ENGINEERING EVIDENCE",
             "Appendices and Engineering Evidence",
             "Collector detail, reconciliation, provenance, and inventories",
             "evidence",
         )
-        infrastructure_content = ""
-        analysis_cuc_platform_section = cuc_cluster_role_section + cuc_mailbox_usage_section + cuc_platform_section
+        cuc_technology_content = (
+            cuc_cluster_role_section + cuc_mailbox_usage_section + cuc_platform_section
+        )
+        cuc_configuration_content = "" if self.customer_safe else cuc_configuration_section
         if not self.customer_safe:
-            infrastructure_content = (
-                infrastructure_chapter
-                + cuc_inventory_section
-                + cuc_cluster_role_section
-                + cuc_mailbox_usage_section
-                + cuc_configuration_section
-                + cuc_platform_section
-                + cuc_informix_section
+            cuc_technology_content = (
+                cuc_inventory_section + cuc_technology_content + cuc_informix_section
             )
-            analysis_cuc_platform_section = ""
         body_class = "default-dark" if self.template.key == "aletheiauc" else self.template.key
 
         return f"""<!doctype html>
@@ -1027,26 +1058,16 @@ class HtmlReportBuilder:
     {findings_chapter}
     {findings_section}
     {scope_chapter}
-    {methodology_scope_section}
     {target_scope_section}
-    {infrastructure_content}
-    {analysis_chapter}
-    {coverage_section}
-    {analysis_cuc_platform_section}
+    {methodology_scope_section}
+    {infrastructure_chapter}
     {cluster_section}
+    {discovered_nodes_section}
+    {cuc_technology_content}
     {backup_readiness_section}
     {lifecycle_section}
     {software_consistency_section}
-    <section>
-      <h2>Discovered Nodes</h2>
-      {"" if self.customer_safe else self._node_source_caption(report)}
-      <table>
-        <thead><tr><th>Technology</th><th>Name</th><th>Address</th><th>Role</th><th>Reachable</th></tr></thead>
-        <tbody>
-          {node_rows}
-        </tbody>
-      </table>
-    </section>
+    {analysis_chapter}
     <section>
       <h2>Device Inventory By Model</h2>
       {source_caption("Device Inventory By Model")}
@@ -1079,7 +1100,6 @@ class HtmlReportBuilder:
     {endpoint_runtime_coverage_section}
     {endpoint_web_sample_section}
     {endpoint_security_posture_section}
-    {call_manager_runtime_resources_section}
     <section>
       <h2>Device Load Summary</h2>
       {source_caption("Device Load Summary")}
@@ -1152,6 +1172,7 @@ class HtmlReportBuilder:
       </table>
       </details>
     </section>
+    {operations_chapter}
     <section>
       <h2>Services</h2>
       {source_caption("Services")}
@@ -1218,6 +1239,8 @@ class HtmlReportBuilder:
       </table>
       </details>
     </section>
+    {call_manager_runtime_resources_section}
+    {configuration_chapter}
     <section>
       <h2>Configuration Inventory</h2>
       <p class="meta">{escape(configuration_intro)}</p>
@@ -1274,6 +1297,8 @@ class HtmlReportBuilder:
         </table>
       </details>
     </section>
+    {cuc_configuration_content}
+    {trust_chapter}
     <section>
       <h2>Certificate Validity and Trust</h2>
       <p class="meta">{escape(certificate_intro)}</p>
@@ -1286,12 +1311,7 @@ class HtmlReportBuilder:
       </table></div>
       </details>
     </section>
-    {platform_checks_section}
-    {"" if self.customer_safe else evidence_chapter}
-    {"" if self.customer_safe else collector_issues_section}
-    {"" if self.customer_safe else collector_notes_section}
-    {"" if self.customer_safe else collector_evidence_section}
-    {"" if self.customer_safe else reconciliation_section}
+    {appendix_chapter}
     <section>
       <h2>Detailed Device Inventory</h2>
       {source_caption("Detailed Device Inventory")}
@@ -1330,6 +1350,13 @@ class HtmlReportBuilder:
       </table>
       </details>
     </section>
+    {"" if self.customer_safe else evidence_chapter}
+    {coverage_section}
+    {platform_checks_section}
+    {"" if self.customer_safe else collector_issues_section}
+    {"" if self.customer_safe else collector_notes_section}
+    {"" if self.customer_safe else collector_evidence_section}
+    {"" if self.customer_safe else reconciliation_section}
   </main>
   {template_footer}
   </div>

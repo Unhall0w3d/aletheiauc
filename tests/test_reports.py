@@ -1437,7 +1437,7 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertIn("health findings.", payload)
         self.assertNotIn("inventory.runtime_reconciliation", payload)
 
-    def test_customer_report_omits_infrastructure_chapter_and_relocates_cuc_health(self) -> None:
+    def test_customer_report_groups_cuc_health_under_technology_chapter(self) -> None:
         report = AssessmentReport(
             facts=AssessmentFacts(
                 configuration_objects=[
@@ -1471,15 +1471,15 @@ class ReportBuilderTests(unittest.TestCase):
 
         engineering = HtmlReportBuilder().build(report)
 
-        self.assertIn("Infrastructure and Inventory", engineering)
+        self.assertIn("Technology Health", engineering)
         self.assertIn("Unity Connection Inventory", engineering)
         self.assertIn("Unity Connection Configuration", engineering)
         for template in available_report_templates():
             customer = HtmlReportBuilder(customer_safe=True, template=template).build(report)
-            self.assertNotIn("Infrastructure and Inventory", customer)
-            self.assertNotIn("04 / INFRASTRUCTURE", customer)
-            self.assertIn("04 / ANALYSIS", customer)
-            self.assertNotIn("05 / EVIDENCE", customer)
+            self.assertIn("Technology Health", customer)
+            self.assertIn("04 / TECHNOLOGY HEALTH", customer)
+            self.assertIn("Endpoint and Call-Control Health", customer)
+            self.assertNotIn("ENGINEERING EVIDENCE", customer)
             self.assertNotIn("Unity Connection Inventory", customer)
             self.assertNotIn("Unity Connection Configuration", customer)
             self.assertIn("Unity Connection Platform Health", customer)
@@ -1487,9 +1487,55 @@ class ReportBuilderTests(unittest.TestCase):
             self.assertIn("2 skipped (expected)", customer)
             self.assertNotIn("Show Unity Connection platform checks", customer)
             self.assertLess(
-                customer.index("Unity Connection Platform Health"),
                 customer.index("<h2>Cluster</h2>"),
+                customer.index("Unity Connection Platform Health"),
             )
+
+    def test_report_uses_reader_oriented_chapter_order(self) -> None:
+        report = AssessmentReport(
+            facts=AssessmentFacts(),
+            collector_results=[],
+            findings=[],
+            runtime_metadata={
+                "targets": [
+                    {
+                        "target_id": "cucm-main",
+                        "technology": "cucm",
+                        "connection_profile": "Main CUCM",
+                        "publisher": "cucm.example.test",
+                    }
+                ]
+            },
+        )
+
+        customer = HtmlReportBuilder(customer_safe=True).build(report)
+        customer_headings = (
+            "Executive Overview",
+            "Priority Findings",
+            "Assessment Context",
+            "Assessment Targets",
+            "Technology Health",
+            "Endpoint and Call-Control Health",
+            "Platform Operations and Capacity",
+            "Configuration and Design Review",
+            "Security and Trust",
+            "Reference Data",
+        )
+        self.assertEqual(
+            [customer.index(heading) for heading in customer_headings],
+            sorted(customer.index(heading) for heading in customer_headings),
+        )
+        self.assertNotIn("ENGINEERING EVIDENCE", customer)
+
+        engineering = HtmlReportBuilder().build(report)
+        self.assertLess(
+            engineering.index("Reference Data"),
+            engineering.index("ENGINEERING EVIDENCE"),
+        )
+        self.assertLess(
+            engineering.index("ENGINEERING EVIDENCE"),
+            engineering.index("Collection Coverage"),
+        )
 
     def test_cucm_runtime_resources_and_missing_endpoints_are_reported_separately(self) -> None:
         report = AssessmentReport(
